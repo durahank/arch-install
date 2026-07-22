@@ -549,7 +549,7 @@ phase_1_full() {
     warn "WARNING: ALL DATA ON $TARGET_DISK WILL BE DESTROYED!"
     lsblk "$TARGET_DISK"
     echo ""
-    read -r -p "Press Enter to confirm, or Ctrl+C to abort: " CONFIRM
+    read -r -p "Type YES to confirm (any other input aborts): " CONFIRM
     case "$CONFIRM" in
         y|Y|yes|YES)
             info "Confirmed. Proceeding..."
@@ -596,7 +596,7 @@ phase_1_reinstall() {
     warn "All data on this partition will be LOST!"
     lsblk "$EXISTING_ARCH_ROOT"
     echo ""
-    read -r -p "Press Enter to confirm, or Ctrl+C to abort: " CONFIRM
+    read -r -p "Type YES to confirm (any other input aborts): " CONFIRM
     case "$CONFIRM" in
         y|Y|yes|YES)
             info "Confirmed. Proceeding..."
