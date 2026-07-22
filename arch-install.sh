@@ -551,7 +551,7 @@ phase_1_full() {
     echo ""
     read -r -p "Press Enter to confirm, or Ctrl+C to abort: " CONFIRM
     case "$CONFIRM" in
-        y|Y|yes|YES|"")
+        y|Y|yes|YES)
             info "Confirmed. Proceeding..."
             ;;
         *)
@@ -598,7 +598,7 @@ phase_1_reinstall() {
     echo ""
     read -r -p "Press Enter to confirm, or Ctrl+C to abort: " CONFIRM
     case "$CONFIRM" in
-        y|Y|yes|YES|"")
+        y|Y|yes|YES)
             info "Confirmed. Proceeding..."
             ;;
         *)
@@ -1190,7 +1190,7 @@ MIRRORS
     fi
 
     # 去重: DETECTED_GPU_MODULES 中如果有重复值, 用 tr 去重
-    DETECTED_GPU_MODULES=$(echo "$DETECTED_GPU_MODULES" | tr " " "\\n" | awk '!seen[$0]++' | tr "\\n" " " | sed 's/^ *//; s/ $//')
+    DETECTED_GPU_MODULES=$(echo "$DETECTED_GPU_MODULES" | xargs -n1 | sort -u | xargs)
 
     # --- 蓝牙检测 ---
     # 通过 lsusb、lspci、rfkill 和 /sys/class/bluetooth 扫描蓝牙适配器
@@ -1372,14 +1372,18 @@ HOSTS
 
     info "Configuring sudoers for wheel group..."
     cat > "${MOUNT_POINT}/etc/sudoers.d/wheel" <<'SUDOERS'
-# wheel 组免密 sudo
-%wheel ALL=(ALL) NOPASSWD: ALL
-
-# 保留密码缓存 5 分钟
+# wheel 组 sudo 规则
+# 一般命令需输入密码，包管理和服务管理免密方便日常维护
 Defaults timestamp_timeout=5
+
+# 一般命令 — 需密码
+%wheel ALL=(ALL) ALL
+
+# 系统管理免密（包管理 + 服务管理）
+%wheel ALL=(ALL) NOPASSWD: /usr/bin/pacman, /usr/bin/systemctl, /usr/bin/reboot, /usr/bin/poweroff
 SUDOERS
     chmod 440 "${MOUNT_POINT}/etc/sudoers.d/wheel"
-    info "OK: wheel group configured for passwordless sudo"
+    info "OK: wheel group configured (password required for general commands; pacman/systemctl/reboot/poweroff are NOPASSWD)"
 
     # ------------------------------------------------------------------
     # sudo 默认编辑器配置
@@ -1732,7 +1736,7 @@ REFIND
         # 使用 sed 在 MODULES=() 的括号中插入检测到的模块
         # 替换模式: MODULES=() → MODULES=(nvidia nvidia_modeset ...)
         arch-chroot "$MOUNT_POINT" sed -i \
-            "s/^MODULES=()/MODULES=($DETECTED_GPU_MODULES)/" \
+            "s|^MODULES=()|MODULES=($DETECTED_GPU_MODULES)|" \
             /etc/mkinitcpio.conf
         info "  -> GPU modules added to mkinitcpio.conf"
     else
@@ -2352,6 +2356,10 @@ main() {
     echo ""
     info "Installation log: ${LOG_FILE}"
     echo ""
+
+    # 设置清理 trap: 脚本中断或退出时自动卸载已挂载的分区
+    # 防止用户在分区/挂载阶段 Ctrl+C 导致磁盘状态不一致
+    trap 'echo ""; warn "Interrupted or exited — unmounting ${MOUNT_POINT}..."; umount -R "$MOUNT_POINT" 2>/dev/null || true; info "Cleanup done"' EXIT INT TERM
 
     phase_0_preflight
     phase_1_partition
