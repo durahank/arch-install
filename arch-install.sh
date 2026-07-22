@@ -1190,7 +1190,7 @@ MIRRORS
     fi
 
     # 去重: DETECTED_GPU_MODULES 中如果有重复值, 用 tr 去重
-    DETECTED_GPU_MODULES=$(echo "$DETECTED_GPU_MODULES" | tr ' ' '\\n' | awk '!seen[$0]++' | tr '\\n' ' ' | sed 's/ $//')
+    DETECTED_GPU_MODULES=$(echo "$DETECTED_GPU_MODULES" | tr " " "\\n" | awk '!seen[$0]++' | tr "\\n" " " | sed 's/^ *//; s/ $//')
 
     # --- 蓝牙检测 ---
     # 通过 lsusb、lspci、rfkill 和 /sys/class/bluetooth 扫描蓝牙适配器
