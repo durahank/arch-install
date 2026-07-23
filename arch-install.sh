@@ -1025,7 +1025,7 @@ MIRRORS
     # --- CPU 微码检测 ---
     # 微码更新修复 CPU 硬件级别的安全漏洞和稳定性问题
     # 通过 /proc/cpuinfo 的 vendor_id 判断厂商
-    CPU_VENDOR=$(grep -m1 'vendor_id' /proc/cpuinfo | awk '{print $3}')
+    CPU_VENDOR=$(grep -m1 'vendor_id' /proc/cpuinfo | awk '{print $3}' || true)
     case "$CPU_VENDOR" in
         GenuineIntel)
             PACKAGES_HARDWARE_DETECTED="$PACKAGES_HARDWARE_DETECTED intel-ucode"
@@ -1049,7 +1049,7 @@ MIRRORS
     #   00:02.0 VGA compatible controller: Intel Corporation ...
     #   01:00.0 VGA compatible controller: NVIDIA Corporation ...
     #   06:00.0 VGA compatible controller: Advanced Micro Devices ...
-    GPU_INFO=$(lspci -k 2>/dev/null | grep -i 'vga\|3d\|display')
+    GPU_INFO=$(lspci -k 2>/dev/null | grep -i 'vga\|3d\|display' || true)
 
     DETECTED_GPU_MODULES=""
     GPU_HAVE_NVIDIA=false
@@ -1170,7 +1170,7 @@ MIRRORS
     #   内核模块: amdxdna
     #   用户态: xrt-plugin-amdxdna (extra 仓库)
     #
-    NPU_INFO=$(lspci -nn 2>/dev/null | grep -iE 'npu|neural|processing.*accelerat|vpu.*8086|8086.*vpu')
+    NPU_INFO=$(lspci -nn 2>/dev/null | grep -iE 'npu|neural|processing.*accelerat|vpu.*8086|8086.*vpu' || true)
 
     # Intel NPU — 通过 PCI accel 类或关键词检测
     if [ -n "$NPU_INFO" ] && echo "$NPU_INFO" | grep -qiE '8086|intel'; then
@@ -1660,7 +1660,7 @@ TIMESHIFT_CFG
 
     if [ "$REFIND_OK" = true ]; then
         # rEFInd 成功 — 创建 refind_linux.conf
-        ROOT_UUID=$(awk '$2 == "/" { print $1 }' "${MOUNT_POINT}/etc/fstab" | sed 's/^UUID=//')
+        ROOT_UUID=$(awk '$2 == "/" { print $1 }' "${MOUNT_POINT}/etc/fstab" | sed 's/^UUID=//' || true)
         if [ -n "$ROOT_UUID" ]; then
             cat > "${MOUNT_POINT}/boot/refind_linux.conf" <<REFIND
 "Default"    "root=UUID=${ROOT_UUID} rw rootflags=subvol=@ quiet splash"
