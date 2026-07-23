@@ -46,6 +46,7 @@ PART_PREFIX=""
 MOUNT_POINT="/mnt"
 FORMAT_ESP=true   # 是否格式化 ESP (全盘=true, 共存/重装复用=false)
 INSTALL_DESKTOP=true # 是否安装桌面环境 (GNOME + THIRD_PARTY), 设为 false 仅部署基础系统
+INSTALL_ROCM=false   # 是否安装 ROCm (AMD GPU 计算平台, 添加约 1.5GB 软件包)
 
 # ============================================================================
 # 日志系统配置
@@ -1054,7 +1055,7 @@ MIRRORS
     #   00:02.0 VGA compatible controller: Intel Corporation ...
     #   01:00.0 VGA compatible controller: NVIDIA Corporation ...
     #   06:00.0 VGA compatible controller: Advanced Micro Devices ...
-    GPU_INFO=$(echo "$LSPCI_K" | grep -i 'vga\\|3d\\|display' || true)
+    GPU_INFO=$(echo "$LSPCI_K" | grep -i 'vga\|3d\|display' || true)
 
     DETECTED_GPU_MODULES=""
     GPU_HAVE_NVIDIA=false
@@ -1063,6 +1064,7 @@ MIRRORS
     GPU_HAVE_VMWARE=false
     GPU_HAVE_VBOX=false
     GPU_HAVE_QEMU=false
+    ROCM_ENABLED=false  # 硬件支持 ROCm 且 INSTALL_ROCM=true 时设为 true
     GPU_DETECTED_COUNT=0
 
     shopt -s nocasematch
@@ -1083,7 +1085,7 @@ MIRRORS
                     info "  -> GPU: NVIDIA (nvidia + nvidia-utils + nvidia-settings)"
                 fi
                 ;;
-            *amd*|*"advanced micro devices"*)
+            *amd*|*advanced*micro*devices*)
                 if [[ "$GPU_HAVE_AMD" != true ]]; then
                     # AMD 开源驱动 (amdgpu 内核模块)
                     # mesa:      OpenGL/Vulkan 用户态驱动
@@ -1094,6 +1096,16 @@ MIRRORS
                     DETECTED_GPU_MODULES="$DETECTED_GPU_MODULES amdgpu"
                     GPU_HAVE_AMD=true
                     info "  -> GPU: AMD (mesa + xf86-video-amdgpu + vulkan-radeon)"
+
+                    # ROCm — AMD GPU 计算平台 (HIP/OpenCL 运行时)
+                    # 额外包: rocm-hip-runtime (HIP), hip-runtime-amd (AMD HIP),
+                    #         rocminfo (设备查询), rocm-smi-lib (监控)
+                    # 完整 SDK: rocm-hip-sdk (开发用, ~15GB 未包含)
+                    if [ "$INSTALL_ROCM" = true ]; then
+                        PACKAGES_HARDWARE_DETECTED="$PACKAGES_HARDWARE_DETECTED rocm-hip-runtime hip-runtime-amd rocminfo rocm-smi-lib"
+                        ROCM_ENABLED=true
+                        info "  -> ROCm enabled (rocm-hip-runtime + hip-runtime-amd + rocminfo + rocm-smi-lib)"
+                    fi
                 fi
                 ;;
             *intel*)
@@ -1129,7 +1141,7 @@ MIRRORS
                     info "  -> GPU: VirtualBox (virtualbox-guest-utils)"
                 fi
                 ;;
-            *qxl*|*bochs*|*virtio*gpu*|*"red hat"*)
+            *qxl*|*bochs*|*virtio*gpu*|*red*hat*)
                 if [[ "$GPU_HAVE_QEMU" != true ]]; then
                     # QEMU / KVM / GNOME Boxes 虚拟机
                     # qxl:       QXL 虚拟显卡 (Boxes/SPICE 默认)
@@ -1643,6 +1655,61 @@ TIMESHIFT_CFG
     info "Enabling reflector.timer (weekly mirror auto-update)..."
     try_cmd "Enabling reflector.timer" arch-chroot "$MOUNT_POINT" systemctl enable reflector.timer
     info "OK: reflector.timer enabled"
+
+    # ------------------------------------------------------------------
+    # ROCm 配置 (AMD GPU 计算平台)
+    # ------------------------------------------------------------------
+    # ROCm 需要用户属于 video 和 render 组才能访问 /dev/kfd (KFD)
+    # 和 /dev/dri/* (DRM 渲染节点) 设备。
+    #
+    # video:  DRM 设备访问 (/dev/dri/*)
+    # render: DRM 渲染节点访问 (/dev/dri/renderD*), KFD 设备访问
+    #
+    # 在 systemd 系统中 render 组由 udev 规则自动创建, 但用户
+    # 首次登录 (gnome-initial-setup) 默认只加入 wheel 组。
+    # 这里创建一个系统激活脚本, 管理员执行后自动配置:
+    #
+    #   sudo /usr/local/bin/rocm-setup.sh <username>
+    #
+    if [ "$ROCM_ENABLED" = true ]; then
+        info "Configuring ROCm device access..."
+
+        # 确保 render 组存在 (udev 规则通常已创建, 保险起见)
+        arch-chroot "$MOUNT_POINT" groupadd -f render
+
+        # 创建运行时环境变量 — ROCm 应用期望的路径和选项
+        cat > "${MOUNT_POINT}/etc/profile.d/rocm.sh" <<'ROCM_ENV'
+# ROCm runtime environment
+# Source this file or log out/in after installing ROCm
+export ROCM_PATH=/usr
+export HSA_OVERRIDE_GFX_VERSION=${HSA_OVERRIDE_GFX_VERSION:-}
+# GPU selection (like CUDA_VISIBLE_DEVICES):
+#   export HIP_VISIBLE_DEVICES=0
+#   export ROCR_VISIBLE_DEVICES=0
+ROCM_ENV
+        chmod 644 "${MOUNT_POINT}/etc/profile.d/rocm.sh"
+        info "  -> Created /etc/profile.d/rocm.sh (ROCM_PATH=/usr)"
+
+        # 创建辅助脚本: 将用户加入 render/video 组
+        cat > "${MOUNT_POINT}/usr/local/bin/rocm-setup.sh" <<'ROCM_SCRIPT'
+#!/usr/bin/env bash
+# ROCm 用户配置脚本
+# 用法: sudo rocm-setup.sh <用户名>
+# 将指定用户加入 video 和 render 组, 使其能访问 ROCm 设备
+set -euo pipefail
+if [ $# -ne 1 ]; then
+    echo "Usage: $0 <username>"
+    exit 1
+fi
+usermod -aG video,render "$1"
+echo "User '$1' added to video and render groups."
+echo "Log out and log back in for changes to take effect."
+ROCM_SCRIPT
+        chmod 755 "${MOUNT_POINT}/usr/local/bin/rocm-setup.sh"
+        info "  -> Created /usr/local/bin/rocm-setup.sh"
+        info "  -> After first boot, run: sudo rocm-setup.sh <your-username>"
+        info "OK: ROCm configured"
+    fi
 
     # ------------------------------------------------------------------
     # 引导管理器安装 (主选 rEFInd, 失败则回退 GRUB)
@@ -2328,6 +2395,10 @@ phase_5_finalise() {
     if [ "$INSTALL_DESKTOP" = true ]; then
         echo "    2. Login as <your-user> (configured during first boot)"
         echo "    3. Enjoy Arch Linux with GNOME!"
+        if [ "$ROCM_ENABLED" = true ]; then
+            echo "    4. ROCm: sudo rocm-setup.sh <your-user>   # add user to video+render groups"
+            echo "       Then log out and back in, run: rocminfo"
+        fi
     else
         echo "    2. Login as root or your user over SSH"
         echo "    3. Configure the system as needed"
