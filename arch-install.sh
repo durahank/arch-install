@@ -1022,6 +1022,11 @@ MIRRORS
 
     PACKAGES_HARDWARE_DETECTED=""
 
+    # 缓存 lspci/lsusb 输出，避免后续重复调用外部命令
+    LSPCI_K=$(lspci -k 2>/dev/null || true)
+    LSPCI_NN=$(lspci -nn 2>/dev/null || true)
+    LSUSB_OUT=$(lsusb 2>/dev/null || true)
+
     # --- CPU 微码检测 ---
     # 微码更新修复 CPU 硬件级别的安全漏洞和稳定性问题
     # 通过 /proc/cpuinfo 的 vendor_id 判断厂商
@@ -1049,7 +1054,7 @@ MIRRORS
     #   00:02.0 VGA compatible controller: Intel Corporation ...
     #   01:00.0 VGA compatible controller: NVIDIA Corporation ...
     #   06:00.0 VGA compatible controller: Advanced Micro Devices ...
-    GPU_INFO=$(lspci -k 2>/dev/null | grep -i 'vga\|3d\|display' || true)
+    GPU_INFO=$(echo "$LSPCI_K" | grep -i 'vga\\|3d\\|display' || true)
 
     DETECTED_GPU_MODULES=""
     GPU_HAVE_NVIDIA=false
@@ -1060,84 +1065,88 @@ MIRRORS
     GPU_HAVE_QEMU=false
     GPU_DETECTED_COUNT=0
 
+    shopt -s nocasematch
     while IFS= read -r line; do
         [ -z "$line" ] && continue
         GPU_DETECTED_COUNT=$((GPU_DETECTED_COUNT + 1))
 
-        if echo "$line" | grep -qi 'nvidia'; then
-            if [[ "$GPU_HAVE_NVIDIA" != true ]]; then
-                # NVIDIA 官方闭源驱动, 支持 GeForce/Quadro/Tesla 系列
-                # 包含: nvidia (内核模块), nvidia-utils (OpenGL/Vulkan),
-                #       nvidia-settings (配置面板)
-                # 内核模块: nvidia, nvidia_modeset, nvidia_uvm, nvidia_drm
-                PACKAGES_HARDWARE_DETECTED="$PACKAGES_HARDWARE_DETECTED nvidia nvidia-utils nvidia-settings"
-                DETECTED_GPU_MODULES="$DETECTED_GPU_MODULES nvidia nvidia_modeset nvidia_uvm nvidia_drm"
-                GPU_HAVE_NVIDIA=true
-                info "  -> GPU: NVIDIA (nvidia + nvidia-utils + nvidia-settings)"
-            fi
-
-        elif echo "$line" | grep -qi 'amd\|advanced micro devices'; then
-            if [[ "$GPU_HAVE_AMD" != true ]]; then
-                # AMD 开源驱动 (amdgpu 内核模块)
-                # mesa:      OpenGL/Vulkan 用户态驱动
-                # xf86-video-amdgpu: Xorg 驱动
-                # vulkan-radeon: RADV Vulkan 驱动
-                # 内核模块: amdgpu
-                PACKAGES_HARDWARE_DETECTED="$PACKAGES_HARDWARE_DETECTED mesa xf86-video-amdgpu vulkan-radeon"
-                DETECTED_GPU_MODULES="$DETECTED_GPU_MODULES amdgpu"
-                GPU_HAVE_AMD=true
-                info "  -> GPU: AMD (mesa + xf86-video-amdgpu + vulkan-radeon)"
-            fi
-
-        elif echo "$line" | grep -qi 'intel'; then
-            if [[ "$GPU_HAVE_INTEL" != true ]]; then
-                # Intel 集成显卡开源驱动
-                # mesa:       OpenGL/Vulkan 用户态驱动
-                # vulkan-intel:   Intel Vulkan 驱动
-                # 内核模块: i915
-                # 注意: xf86-video-intel 已弃用, 使用 Xorg 内置的 modesetting 驱动
-                PACKAGES_HARDWARE_DETECTED="$PACKAGES_HARDWARE_DETECTED mesa vulkan-intel"
-                DETECTED_GPU_MODULES="$DETECTED_GPU_MODULES i915"
-                GPU_HAVE_INTEL=true
-                info "  -> GPU: Intel (mesa + vulkan-intel, modesetting Xorg driver)"
-            fi
-
-        elif echo "$line" | grep -qi 'vmware'; then
-            if [[ "$GPU_HAVE_VMWARE" != true ]]; then
-                # VMware 虚拟机显卡驱动
-                # 内核模块: vmwgfx
-                PACKAGES_HARDWARE_DETECTED="$PACKAGES_HARDWARE_DETECTED xf86-video-vmware"
-                DETECTED_GPU_MODULES="$DETECTED_GPU_MODULES vmwgfx"
-                GPU_HAVE_VMWARE=true
-                info "  -> GPU: VMware (xf86-video-vmware)"
-            fi
-
-        elif echo "$line" | grep -qi 'virtualbox'; then
-            if [[ "$GPU_HAVE_VBOX" != true ]]; then
-                # VirtualBox 虚拟显卡驱动 + 增强工具
-                # 内核模块: vboxguest
-                PACKAGES_HARDWARE_DETECTED="$PACKAGES_HARDWARE_DETECTED virtualbox-guest-utils"
-                DETECTED_GPU_MODULES="$DETECTED_GPU_MODULES vboxguest"
-                GPU_HAVE_VBOX=true
-                info "  -> GPU: VirtualBox (virtualbox-guest-utils)"
-            fi
-
-        elif echo "$line" | grep -qiE 'qxl|red hat|bochs|virtio.*gpu'; then
-            if [[ "$GPU_HAVE_QEMU" != true ]]; then
-                # QEMU / KVM / GNOME Boxes 虚拟机
-                # qxl:       QXL 虚拟显卡 (Boxes/SPICE 默认)
-                # bochs:     Bochs 显示驱动 (UEFI 固件模拟)
-                # virtio:    VirtIO-GPU (高性能虚拟显卡)
-                # 内核模块: qxl, bochs, virtio-gpu
-                # spice-vdagent:    SPICE 剪贴板共享 + 窗口自适应
-                # qemu-guest-agent: QEMU 客体内代理 (管理命令/快照集成)
-                PACKAGES_HARDWARE_DETECTED="$PACKAGES_HARDWARE_DETECTED spice-vdagent qemu-guest-agent"
-                DETECTED_GPU_MODULES="$DETECTED_GPU_MODULES qxl bochs virtio-gpu"
-                GPU_HAVE_QEMU=true
-                info "  -> VM: QEMU/KVM/GNOME Boxes (spice-vdagent + qemu-guest-agent)"
-            fi
-        fi
+        case "$line" in
+            *nvidia*)
+                if [[ "$GPU_HAVE_NVIDIA" != true ]]; then
+                    # NVIDIA 官方闭源驱动, 支持 GeForce/Quadro/Tesla 系列
+                    # 包含: nvidia (内核模块), nvidia-utils (OpenGL/Vulkan),
+                    #       nvidia-settings (配置面板)
+                    # 内核模块: nvidia, nvidia_modeset, nvidia_uvm, nvidia_drm
+                    PACKAGES_HARDWARE_DETECTED="$PACKAGES_HARDWARE_DETECTED nvidia nvidia-utils nvidia-settings"
+                    DETECTED_GPU_MODULES="$DETECTED_GPU_MODULES nvidia nvidia_modeset nvidia_uvm nvidia_drm"
+                    GPU_HAVE_NVIDIA=true
+                    info "  -> GPU: NVIDIA (nvidia + nvidia-utils + nvidia-settings)"
+                fi
+                ;;
+            *amd*|*"advanced micro devices"*)
+                if [[ "$GPU_HAVE_AMD" != true ]]; then
+                    # AMD 开源驱动 (amdgpu 内核模块)
+                    # mesa:      OpenGL/Vulkan 用户态驱动
+                    # xf86-video-amdgpu: Xorg 驱动
+                    # vulkan-radeon: RADV Vulkan 驱动
+                    # 内核模块: amdgpu
+                    PACKAGES_HARDWARE_DETECTED="$PACKAGES_HARDWARE_DETECTED mesa xf86-video-amdgpu vulkan-radeon"
+                    DETECTED_GPU_MODULES="$DETECTED_GPU_MODULES amdgpu"
+                    GPU_HAVE_AMD=true
+                    info "  -> GPU: AMD (mesa + xf86-video-amdgpu + vulkan-radeon)"
+                fi
+                ;;
+            *intel*)
+                if [[ "$GPU_HAVE_INTEL" != true ]]; then
+                    # Intel 集成显卡开源驱动
+                    # mesa:       OpenGL/Vulkan 用户态驱动
+                    # vulkan-intel:   Intel Vulkan 驱动
+                    # 内核模块: i915
+                    # 注意: xf86-video-intel 已弃用, 使用 Xorg 内置的 modesetting 驱动
+                    PACKAGES_HARDWARE_DETECTED="$PACKAGES_HARDWARE_DETECTED mesa vulkan-intel"
+                    DETECTED_GPU_MODULES="$DETECTED_GPU_MODULES i915"
+                    GPU_HAVE_INTEL=true
+                    info "  -> GPU: Intel (mesa + vulkan-intel, modesetting Xorg driver)"
+                fi
+                ;;
+            *vmware*)
+                if [[ "$GPU_HAVE_VMWARE" != true ]]; then
+                    # VMware 虚拟机显卡驱动
+                    # 内核模块: vmwgfx
+                    PACKAGES_HARDWARE_DETECTED="$PACKAGES_HARDWARE_DETECTED xf86-video-vmware"
+                    DETECTED_GPU_MODULES="$DETECTED_GPU_MODULES vmwgfx"
+                    GPU_HAVE_VMWARE=true
+                    info "  -> GPU: VMware (xf86-video-vmware)"
+                fi
+                ;;
+            *virtualbox*)
+                if [[ "$GPU_HAVE_VBOX" != true ]]; then
+                    # VirtualBox 虚拟显卡驱动 + 增强工具
+                    # 内核模块: vboxguest
+                    PACKAGES_HARDWARE_DETECTED="$PACKAGES_HARDWARE_DETECTED virtualbox-guest-utils"
+                    DETECTED_GPU_MODULES="$DETECTED_GPU_MODULES vboxguest"
+                    GPU_HAVE_VBOX=true
+                    info "  -> GPU: VirtualBox (virtualbox-guest-utils)"
+                fi
+                ;;
+            *qxl*|*bochs*|*virtio*gpu*|*"red hat"*)
+                if [[ "$GPU_HAVE_QEMU" != true ]]; then
+                    # QEMU / KVM / GNOME Boxes 虚拟机
+                    # qxl:       QXL 虚拟显卡 (Boxes/SPICE 默认)
+                    # bochs:     Bochs 显示驱动 (UEFI 固件模拟)
+                    # virtio:    VirtIO-GPU (高性能虚拟显卡)
+                    # 内核模块: qxl, bochs, virtio-gpu
+                    # spice-vdagent:    SPICE 剪贴板共享 + 窗口自适应
+                    # qemu-guest-agent: QEMU 客体内代理 (管理命令/快照集成)
+                    PACKAGES_HARDWARE_DETECTED="$PACKAGES_HARDWARE_DETECTED spice-vdagent qemu-guest-agent"
+                    DETECTED_GPU_MODULES="$DETECTED_GPU_MODULES qxl bochs virtio-gpu"
+                    GPU_HAVE_QEMU=true
+                    info "  -> VM: QEMU/KVM/GNOME Boxes (spice-vdagent + qemu-guest-agent)"
+                fi
+                ;;
+        esac
     done <<< "$GPU_INFO"
+    shopt -u nocasematch
 
     # 检测混合显卡 (NVIDIA Optimus): NVIDIA + Intel 或 NVIDIA + AMD
     if [[ "$GPU_HAVE_NVIDIA" = true ]] && { [[ "$GPU_HAVE_INTEL" = true ]] || [[ "$GPU_HAVE_AMD" = true ]]; }; then
@@ -1170,7 +1179,7 @@ MIRRORS
     #   内核模块: amdxdna
     #   用户态: xrt-plugin-amdxdna (extra 仓库)
     #
-    NPU_INFO=$(lspci -nn 2>/dev/null | grep -iE 'npu|neural|processing.*accelerat|vpu.*8086|8086.*vpu' || true)
+    NPU_INFO=$(echo "$LSPCI_NN" | grep -iE 'npu|neural|processing.*accelerat|vpu.*8086|8086.*vpu' || true)
 
     # Intel NPU — 通过 PCI accel 类或关键词检测
     if [ -n "$NPU_INFO" ] && echo "$NPU_INFO" | grep -qiE '8086|intel'; then
@@ -1198,9 +1207,8 @@ MIRRORS
     # "Network controller", 需通过 rfkill 或 sysfs 辅助判断。
     # bluez:        Bluetooth 协议栈核心
     # bluez-utils:  bluetoothctl, hcitool 等命令行工具
-    if lsusb -d 0x8087:0a2a 2>/dev/null || \
-       lsusb 2>/dev/null | grep -qi 'bluetooth' || \
-       lspci 2>/dev/null | grep -qi 'bluetooth' || \
+    if echo "$LSUSB_OUT" | grep -qiE '8087:0a2a|bluetooth' || \
+       echo "$LSPCI_NN" | grep -qi 'bluetooth' || \
        rfkill list 2>/dev/null | grep -qi 'bluetooth' || \
        [ -d /sys/class/bluetooth ]; then
         PACKAGES_HARDWARE_DETECTED="$PACKAGES_HARDWARE_DETECTED bluez bluez-utils"
@@ -1223,7 +1231,7 @@ MIRRORS
     #
     # libfprint:  开源指纹驱动库, 支持大多数消费级指纹设备
     # fprintd:    D-Bus 服务, 与 PAM/GDM/gnome-control-center 集成
-    if lsusb 2>/dev/null | grep -qiE \
+    if echo "$LSUSB_OUT" | grep -qiE \
         'fingerprint|0x138a|0x0483.*stmicro|0x27c6|0x06cb|0x2541|0x1c7a|0x2808'; then
         PACKAGES_HARDWARE_DETECTED="$PACKAGES_HARDWARE_DETECTED libfprint fprintd"
         info "  -> Fingerprint reader detected (libfprint + fprintd)"
