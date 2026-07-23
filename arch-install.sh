@@ -1218,7 +1218,7 @@ MIRRORS
     fi
 
     # --- 指纹识别检测 ---
-    # 通过 lsusb 扫描指纹读卡器设备。
+    # 通过 sysfs USB uevent 扫描指纹读卡器设备，无需 lsusb。
     # 常见指纹设备供应商 ID:
     #   0x138a  — Validity / Synaptics (广泛用于笔记本)
     #   0x0483  — STMicroelectronics (ST 传感器)
@@ -1231,8 +1231,8 @@ MIRRORS
     #
     # libfprint:  开源指纹驱动库, 支持大多数消费级指纹设备
     # fprintd:    D-Bus 服务, 与 PAM/GDM/gnome-control-center 集成
-    if echo "$LSUSB_OUT" | grep -qiE \
-        'fingerprint|0x138a|0x0483.*stmicro|0x27c6|0x06cb|0x2541|0x1c7a|0x2808'; then
+    if grep -qsE 'PRODUCT=(138a|0483|27c6|06cb|10a5|2541|1c7a|2808)/' \
+        /sys/bus/usb/devices/*/uevent 2>/dev/null; then
         PACKAGES_HARDWARE_DETECTED="$PACKAGES_HARDWARE_DETECTED libfprint fprintd"
         info "  -> Fingerprint reader detected (libfprint + fprintd)"
     else
