@@ -2280,7 +2280,8 @@ ENV
     #   cups                             — 打印机管理 (CUPS 网页界面)
     #   bluetooth-sendto                 — 蓝牙发送 (由 GNOME 蓝牙接管)
     #   lstopo                           — 硬件拓扑查看器 (hwloc 调试工具)
-    #   org.gnome.Evince.desktop         — GNOME 文档查看器 (已被 papers 替代)
+    #   cmake-gui                        — CMake GUI 配置工具 (命令行优先)
+    #   org.gnome.Evince		         — GNOME 文档查看器 (已被 papers 替代)
     #   libreoffice-base                 — LibreOffice 数据库 (不常用)
     #   libreoffice-draw                 — LibreOffice 绘图 (不常用)
     #   libreoffice-math                 — LibreOffice 公式 (不常用)
@@ -2296,7 +2297,7 @@ ENV
     info "  -> Hiding non-user-facing application icons..."
     # shellcheck disable=SC2016 # 单引号有意为之—变量在 chroot 内展开
     arch-chroot "$MOUNT_POINT" sh -c '
-        apps="avahi-discover bssh bvnc qvidcap qv4l2 system-config-printer cups bluetooth-sendto lstopo org.gnome.Evince libreoffice-base libreoffice-draw libreoffice-math libreoffice-startcenter"
+        apps="avahi-discover bssh bvnc qvidcap qv4l2 system-config-printer cups bluetooth-sendto lstopo cmake-gui org.gnome.Evince libreoffice-base libreoffice-draw libreoffice-math libreoffice-startcenter"
         for app in $apps; do
             desktop_file="/usr/share/applications/${app}.desktop"
             if [ ! -f "$desktop_file" ]; then
