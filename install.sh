@@ -55,11 +55,11 @@ INSTALL_ROCM=false   # 是否安装 ROCm (AMD GPU 计算平台, 添加约 1.5GB 
 # 日志文件包含时间戳、日志级别和完整命令输出。
 #
 # 日志文件位置:
-#   /tmp/arch-install-<时间戳>.log  (live 环境)
+#   /tmp/install-<时间戳>.log  (live 环境)
 #   脚本运行完后保留在此路径, 如需留存请手动复制
 
 LOG_START_TIME="$(date +%Y%m%d_%H%M%S)"
-LOG_FILE="/tmp/arch-install-${LOG_START_TIME}.log"
+LOG_FILE="/tmp/install-${LOG_START_TIME}.log"
 
 # 初始化日志文件, 写入头部信息
 _log_init() {
@@ -97,7 +97,7 @@ run_cmd() {
 
     # 创建一个临时文件捕获命令的输出
     local cmd_log
-    cmd_log="$(mktemp /tmp/arch-install-cmd-XXXXXX.log)"
+    cmd_log="$(mktemp /tmp/install-cmd-XXXXXX.log)"
 
     # 执行命令, 同时输出到终端和临时日志
     set +e
