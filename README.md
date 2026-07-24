@@ -30,7 +30,7 @@
 
 ```bash
 # 方式一：直接下载
-curl -O https://raw.githubusercontent.com/durahank/arch-install/main/arch-install.sh
+curl -O https://raw.githubusercontent.com/durahank/arch-install/main/install.sh
 
 # 方式二：克隆仓库
 git clone https://github.com/durahank/arch-install.git
@@ -40,7 +40,7 @@ cd arch-install
 ### 3. 运行
 
 ```bash
-bash arch-install.sh
+bash install.sh
 ```
 
 > 脚本从 ISO 启动后默认以 **root** 运行，无需 `sudo`。

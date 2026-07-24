@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# arch-install.sh - Arch Linux 手动安装脚本
+# install.sh - Arch Linux 手动安装脚本
 # ============================================
 #
 # 一个独立的脚本, 执行完整的 Arch Linux 手动安装流程。
@@ -8,7 +8,7 @@
 #
 # 使用方法:
 #   从 Arch 官方 ISO 启动后, 执行:
-#       bash arch-install.sh
+#       bash install.sh
 
 set -euo pipefail
 
@@ -66,7 +66,7 @@ _log_init() {
     mkdir -p "$(dirname "$LOG_FILE")"
     {
         echo "============================================"
-        echo " arch-install.sh 安装日志"
+        echo " install.sh 安装日志"
         echo " 开始时间: $(date '+%Y-%m-%d %H:%M:%S')"
         echo " 主机名:   $(hostname)"
         echo " 内核:     $(uname -r)"
@@ -1438,7 +1438,7 @@ SUDOERS
     # 建议首次登录后执行 ssh-copy-id 切换为密钥认证并禁用密码。
     cat > "${MOUNT_POINT}/etc/ssh/sshd_config" <<'SSHD'
 # OpenSSH server configuration — hardened desktop defaults
-# Managed by arch-install.sh; manual overrides go in /etc/ssh/sshd_config.d/
+# Managed by install.sh; manual overrides go in /etc/ssh/sshd_config.d/
 
 # 监听
 Port 22
@@ -2429,7 +2429,7 @@ main() {
 
     echo ""
     echo "================================================"
-    echo "   arch-install.sh"
+    echo "   install.sh"
     echo "   Manual Arch Linux Installation"
     echo "   (No archinstall - pure manual process)"
     echo "================================================"
