@@ -1681,14 +1681,15 @@ TIMESHIFT_CFG
         cat > "${MOUNT_POINT}/etc/profile.d/rocm.sh" <<'ROCM_ENV'
 # ROCm runtime environment
 # Source this file or log out/in after installing ROCm
-export ROCM_PATH=/usr
-export HSA_OVERRIDE_GFX_VERSION=${HSA_OVERRIDE_GFX_VERSION:-}
+export ROCM_PATH=/opt/rocm
+export PATH=$PATH:/opt/rocm/bin
+export LD_LIBRARY_PATH=/opt/rocm/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
 # GPU selection (like CUDA_VISIBLE_DEVICES):
 #   export HIP_VISIBLE_DEVICES=0
 #   export ROCR_VISIBLE_DEVICES=0
 ROCM_ENV
         chmod 644 "${MOUNT_POINT}/etc/profile.d/rocm.sh"
-        info "  -> Created /etc/profile.d/rocm.sh (ROCM_PATH=/usr)"
+        info "  -> Created /etc/profile.d/rocm.sh (ROCM_PATH=/opt/rocm, PATH+=/opt/rocm/bin)"
 
         # 创建辅助脚本: 将用户加入 render/video 组
         cat > "${MOUNT_POINT}/usr/local/bin/rocm-setup.sh" <<'ROCM_SCRIPT'
