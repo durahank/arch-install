@@ -17,7 +17,7 @@
   - 自动识别 NPU（Intel VPU / AMD NPU）
   - 自动识别蓝牙适配器
 - **可选桌面环境** — GNOME + 常用第三方应用
-- **系统美化** — Plymouth 开机动画、GRUB/rEFInd 主题
+- **系统美化** — Plymouth 开机动画、rEFInd 三模式引导菜单
 - **完善日志** — 全步骤日志记录到 `/tmp/install-<时间戳>.log`
 
 ## 使用方法
@@ -55,8 +55,8 @@ phase_0_preflight           # 预检：网络、磁盘、硬件检测
 phase_1_partition           # 分区
     ├── GPT 分区表
     ├── EFI 系统分区 (ESP)
-    ├── Swap 分区 (可选)
-    └── Btrfs 根分区
+    ├── Btrfs 根分区
+    └── ZRAM 压缩交换 (无需单独 swap 分区)
 
 phase_2_format_and_mount    # 格盘挂载
     ├── 格式化 ESP (FAT32)
@@ -71,8 +71,9 @@ phase_3_pacstrap            # 安装基础系统
 phase_4_configure           # 系统配置
     ├── fstab / hostname / locale
     ├── 用户和 sudo
-    ├── 引导器 (GRUB / rEFInd)
-    └── Plymouth 开机动画
+    ├── 引导器 (rEFInd 三模式 / GRUB 回退)
+    ├── Plymouth 开机动画
+    └── SSH 加固 + 非用户面向图标隐藏
 
 phase_5_finalise            # 收尾
     ├── 网络和时区

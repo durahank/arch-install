@@ -1439,6 +1439,7 @@ SUDOERS
     cat > "${MOUNT_POINT}/etc/ssh/sshd_config" <<'SSHD'
 # OpenSSH server configuration — hardened desktop defaults
 # Managed by install.sh; manual overrides go in /etc/ssh/sshd_config.d/
+Include /etc/ssh/sshd_config.d/*.conf
 
 # 监听
 Port 22
@@ -1739,8 +1740,9 @@ ROCM_SCRIPT
         ROOT_UUID=$(awk '$2 == "/" { print $1 }' "${MOUNT_POINT}/etc/fstab" | sed 's/^UUID=//' || true)
         if [ -n "$ROOT_UUID" ]; then
             cat > "${MOUNT_POINT}/boot/refind_linux.conf" <<REFIND
-"Default"    "root=UUID=${ROOT_UUID} rw rootflags=subvol=@ quiet splash"
-"Console"    "root=UUID=${ROOT_UUID} rw rootflags=subvol=@"
+"Boot with standard options"  "root=UUID=${ROOT_UUID} rw rootflags=subvol=@ quiet splash"
+"Boot to single-user mode"    "root=UUID=${ROOT_UUID} rw rootflags=subvol=@ quiet splash single"
+"Boot with minimal options"   "root=UUID=${ROOT_UUID} rw rootflags=subvol=@"
 REFIND
             info "  -> /boot/refind_linux.conf created (root=UUID=$ROOT_UUID, subvol=@)"
 
