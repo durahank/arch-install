@@ -46,7 +46,7 @@ PART_PREFIX=""
 MOUNT_POINT="/mnt"
 FORMAT_ESP=true   # 是否格式化 ESP (全盘=true, 共存/重装复用=false)
 INSTALL_DESKTOP=true # 是否安装桌面环境 (GNOME + THIRD_PARTY), 设为 false 仅部署基础系统
-INSTALL_ROCM=false   # 是否安装 ROCm (AMD GPU 计算平台, 添加约 1.5GB 软件包)
+INSTALL_ROCM=true    # 是否安装 ROCm (AMD GPU 计算平台, 添加约 1.5GB 软件包)
 
 # ============================================================================
 # 可定制系统参数
