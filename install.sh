@@ -49,6 +49,23 @@ INSTALL_DESKTOP=true # 是否安装桌面环境 (GNOME + THIRD_PARTY), 设为 fa
 INSTALL_ROCM=false   # 是否安装 ROCm (AMD GPU 计算平台, 添加约 1.5GB 软件包)
 
 # ============================================================================
+# 可定制系统参数
+# ============================================================================
+# 根据个人偏好修改以下默认值, 安装过程会自动使用它们。
+# ============================================================================
+TIMEZONE="Asia/Shanghai"                # 系统时区
+SYSTEM_LOCALE="zh_CN.UTF-8"             # 系统语言 / 界面语言
+HOSTNAME="archlinux"                    # 主机名
+KEYMAP="us"                             # 控制台键盘布局
+REFLECTOR_COUNTRY="China"               # pacman 镜像源筛选国家
+
+# archlinuxcn 社区仓库镜像 (保留 \$arch 字面量)
+readonly ARCHLINUXCN_MIRROR="https://mirrors.tuna.tsinghua.edu.cn/archlinuxcn/\$arch"
+
+ZRAM_SIZE="ram / 2"                     # ZRAM 压缩交换大小
+SSH_PORT=22                             # SSH 监听端口
+
+# ============================================================================
 # 日志系统配置
 # ============================================================================
 # 所有输出同时写入终端和日志文件, 方便调试时回溯每个步骤的执行情况。
@@ -950,7 +967,7 @@ phase_3_pacstrap() {
     info "Updating mirrorlist with reflector for faster downloads..."
     info "  -> Ranking mirrors by download speed..."
     if reflector \
-        --country China \
+        --country "${REFLECTOR_COUNTRY}" \
         --latest 20 \
         --protocol https \
         --sort rate \
@@ -992,7 +1009,7 @@ MIRRORS
             echo ""
             echo "[archlinuxcn]"
             # shellcheck disable=SC2016
-            echo 'Server = https://mirrors.tuna.tsinghua.edu.cn/archlinuxcn/$arch'
+            echo "Server = ${ARCHLINUXCN_MIRROR}"
         } >> /etc/pacman.conf
         info "OK: [archlinuxcn] added to live pacman.conf"
     else
@@ -1291,7 +1308,7 @@ MIRRORS
             echo ""
             echo "[archlinuxcn]"
             # shellcheck disable=SC2016
-            echo 'Server = https://mirrors.tuna.tsinghua.edu.cn/archlinuxcn/$arch'
+            echo "Server = ${ARCHLINUXCN_MIRROR}"
         } >> "${MOUNT_POINT}/etc/pacman.conf"
         info "OK: [archlinuxcn] persisted in target system"
     else
@@ -1341,47 +1358,45 @@ phase_4_configure() {
     # ------------------------------------------------------------------
     # 时区配置
     # ------------------------------------------------------------------
-    # 设置时区为 Asia/Shanghai
+    # 设置时区
     # /etc/localtime 是指向 /usr/share/zoneinfo/ 下文件的符号链接
-    info "Setting timezone to Asia/Shanghai..."
-    arch-chroot "$MOUNT_POINT" ln -sf "/usr/share/zoneinfo/Asia/Shanghai" /etc/localtime
+    info "Setting timezone to ${TIMEZONE}..."
+    arch-chroot "$MOUNT_POINT" ln -sf "/usr/share/zoneinfo/${TIMEZONE}" /etc/localtime
     # 同步硬件时钟 (RTC) 到 UTC
     # 推荐所有 Unix-like 系统使用 UTC, 避免时区转换问题
     # 虚拟机中可能无法访问硬件时钟, 失败时继续
     arch-chroot "$MOUNT_POINT" hwclock --systohc 2>/dev/null || true
-    info "OK: Timezone set to Asia/Shanghai"
+    info "OK: Timezone set to ${TIMEZONE}"
 
     # ------------------------------------------------------------------
     # 语言环境 (locale) 配置
     # ------------------------------------------------------------------
     # 取消 en_US.UTF-8 和 zh_CN.UTF-8 的注释, 然后生成 locale 数据
     # zh_CN.UTF-8 为中文语言包提供基础 locale 支持
-    info "Generating locale (zh_CN.UTF-8 + en_US.UTF-8)..."
+    info "Generating locale (${SYSTEM_LOCALE} + en_US.UTF-8)..."
     arch-chroot "$MOUNT_POINT" sed -i 's/^#en_US.UTF-8/en_US.UTF-8/' /etc/locale.gen
-    arch-chroot "$MOUNT_POINT" sed -i 's/^#zh_CN.UTF-8/zh_CN.UTF-8/' /etc/locale.gen
-    arch-chroot "$MOUNT_POINT" sed -i 's/^#zh_TW.UTF-8/zh_TW.UTF-8/' /etc/locale.gen
-    arch-chroot "$MOUNT_POINT" sed -i 's/^#zh_HK.UTF-8/zh_HK.UTF-8/' /etc/locale.gen
+    arch-chroot "$MOUNT_POINT" sed -i "s/^#${SYSTEM_LOCALE}/${SYSTEM_LOCALE}/" /etc/locale.gen
     arch-chroot "$MOUNT_POINT" locale-gen
-    echo "LANG=zh_CN.UTF-8" > "${MOUNT_POINT}/etc/locale.conf"
-    echo "LC_MESSAGES=zh_CN.UTF-8" >> "${MOUNT_POINT}/etc/locale.conf"
+    echo "LANG=${SYSTEM_LOCALE}" > "${MOUNT_POINT}/etc/locale.conf"
+    echo "LC_MESSAGES=${SYSTEM_LOCALE}" >> "${MOUNT_POINT}/etc/locale.conf"
     # 配置 vconsole (终端键盘布局)
-    echo "KEYMAP=us" > "${MOUNT_POINT}/etc/vconsole.conf"
-    info "OK: Locale configured (Chinese)"
+    echo "KEYMAP=${KEYMAP}" > "${MOUNT_POINT}/etc/vconsole.conf"
+    info "OK: Locale configured (${SYSTEM_LOCALE})"
     
     # ------------------------------------------------------------------
     # 主机名与 /etc/hosts 配置
     # ------------------------------------------------------------------
     # 设置主机名 (仅写入 /etc/hostname, 由系统启动时读取)
-    info 'Setting hostname to archlinux...'
-    echo "archlinux" > "${MOUNT_POINT}/etc/hostname"
+    info "Setting hostname to ${HOSTNAME}..."
+    echo "${HOSTNAME}" > "${MOUNT_POINT}/etc/hostname"
     # 配置 /etc/hosts
     # 确保主机名能解析到回环地址, 某些服务依赖此配置
     cat > "${MOUNT_POINT}/etc/hosts" <<HOSTS
 127.0.0.1   localhost
 ::1         localhost
-127.0.1.1   archlinux.localdomain archlinux
+127.0.1.1   ${HOSTNAME}.localdomain ${HOSTNAME}
 HOSTS
-    info 'OK: Hostname set to archlinux'
+    info "OK: Hostname set to ${HOSTNAME}"
 
     # ------------------------------------------------------------------
     # 配置 sudoers
@@ -1436,13 +1451,13 @@ SUDOERS
     # 安全加固的 sshd_config
     # 保留 PasswordAuthentication yes 方便首次使用,
     # 建议首次登录后执行 ssh-copy-id 切换为密钥认证并禁用密码。
-    cat > "${MOUNT_POINT}/etc/ssh/sshd_config" <<'SSHD'
+    cat > "${MOUNT_POINT}/etc/ssh/sshd_config" <<SSHD
 # OpenSSH server configuration — hardened desktop defaults
 # Managed by install.sh; manual overrides go in /etc/ssh/sshd_config.d/
 Include /etc/ssh/sshd_config.d/*.conf
 
 # 监听
-Port 22
+Port ${SSH_PORT}
 AddressFamily inet
 ListenAddress 0.0.0.0
 
@@ -1858,9 +1873,9 @@ REFIND
     info "Configuring zram swap..."
 
     # 创建 zram 配置文件
-    cat > "${MOUNT_POINT}/etc/systemd/zram-generator.conf" <<'ZRAM'
+    cat > "${MOUNT_POINT}/etc/systemd/zram-generator.conf" <<ZRAM
 [zram0]
-zram-size = ram / 2
+zram-size = ${ZRAM_SIZE}
 compression-algorithm = zstd
 swap-priority = 100
 fs-type = swap
@@ -2149,7 +2164,7 @@ PROFILE
     cat > "/tmp/dconf-local-dbase" <<'DCONF'
 [org/gnome/desktop/interface]
 icon-theme='Papirus'
-locale='zh_CN.UTF-8'
+locale='${SYSTEM_LOCALE}'
 font-name='Noto Sans CJK SC 12'
 monospace-font-name='Noto Sans Mono CJK SC 12'
 document-font-name='Noto Sans CJK SC 12'
@@ -2391,7 +2406,7 @@ phase_5_finalise() {
         echo "  Desktop:     (none — headless system)"
     fi
     echo "  Filesystem:  btrfs (with @, @home, @log, @pkg)"
-    echo "  Timezone:    Asia/Shanghai"
+    echo "  Timezone:    ${TIMEZONE}"
     echo "  Install log: ${LOG_FILE}"
     echo ""
     echo "  Next steps:"
