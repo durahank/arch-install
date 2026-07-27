@@ -1729,12 +1729,21 @@ ROCM_SCRIPT
     fi
 
     # ------------------------------------------------------------------
-    # 引导管理器安装 (主选 rEFInd, 失败则回退 GRUB)
+    # 引导管理器安装 (同时安装 rEFInd + GRUB, 双引导管理器并行)
     # ------------------------------------------------------------------
-    REFIND_OK=false
+    # 两个引导管理器共用变量 (提前提取, 免去重复代码)
+    ROOT_UUID=$(awk '$2 == "/" { print $1 }' "${MOUNT_POINT}/etc/fstab" | sed 's/^UUID=//' || true)
+    MICROCODE_INITRD=""
+    case "${CPU_VENDOR:-}" in
+        GenuineIntel) MICROCODE_INITRD="initrd=/intel-ucode.img" ;;
+        AuthenticAMD) MICROCODE_INITRD="initrd=/amd-ucode.img" ;;
+    esac
+    NVIDIA_MODESET_PARAM=""
+    [ "${GPU_HAVE_NVIDIA:-false}" = true ] && NVIDIA_MODESET_PARAM="nvidia_drm.modeset=1"
 
+    # --- 1. rEFInd ---
     info "Installing rEFInd boot manager..."
-    # refind-install 自动检测 ESP (/boot/efi), 复制文件并注册 NVRAM 启动项
+    REFIND_OK=false
     if arch-chroot "$MOUNT_POINT" refind-install 2>/dev/null; then
         REFIND_OK=true
         info "OK: rEFInd installed to ESP"
@@ -1750,56 +1759,43 @@ ROCM_SCRIPT
         fi
     fi
 
-    if [ "$REFIND_OK" = true ]; then
+    if [ "$REFIND_OK" = true ] && [ -n "$ROOT_UUID" ]; then
         # rEFInd 成功 — 创建 refind_linux.conf
-        ROOT_UUID=$(awk '$2 == "/" { print $1 }' "${MOUNT_POINT}/etc/fstab" | sed 's/^UUID=//' || true)
-        # CPU 微码 initrd — 在引导早期加载, 修复 CPU 硬件安全漏洞
-        MICROCODE_INITRD=""
-        case "${CPU_VENDOR:-}" in
-            GenuineIntel) MICROCODE_INITRD="initrd=/intel-ucode.img" ;;
-            AuthenticAMD) MICROCODE_INITRD="initrd=/amd-ucode.img" ;;
-        esac
-        # NVIDIA DRM modeset — 若检测到 NVIDIA GPU, 启用内核模式设置
-        # nvidia_drm.modeset=1 确保 NVIDIA 驱动在引导时正确初始化 KMS,
-        # 修复 Plymouth 开机动画不显示等问题。
-        NVIDIA_MODESET_PARAM=""
-        [ "${GPU_HAVE_NVIDIA:-false}" = true ] && NVIDIA_MODESET_PARAM="nvidia_drm.modeset=1"
-        if [ -n "$ROOT_UUID" ]; then
-            cat > "${MOUNT_POINT}/boot/refind_linux.conf" <<REFIND
+        cat > "${MOUNT_POINT}/boot/refind_linux.conf" <<REFIND
 "Boot with standard options"  "root=UUID=${ROOT_UUID} rw rootflags=subvol=@ quiet splash ${MICROCODE_INITRD} ${NVIDIA_MODESET_PARAM}"
 "Boot to single-user mode"    "root=UUID=${ROOT_UUID} rw rootflags=subvol=@ quiet splash single ${MICROCODE_INITRD} ${NVIDIA_MODESET_PARAM}"
 "Boot with minimal options"   "root=UUID=${ROOT_UUID} rw rootflags=subvol=@ ${MICROCODE_INITRD} ${NVIDIA_MODESET_PARAM}"
 REFIND
-            info "  -> /boot/refind_linux.conf created (root=UUID=$ROOT_UUID, subvol=@)"
+        info "  -> /boot/refind_linux.conf created (root=UUID=$ROOT_UUID, subvol=@)"
 
-            local esp_refind="${MOUNT_POINT}/boot/efi/EFI/refind/refind_linux.conf"
-            if [ -d "$(dirname "$esp_refind")" ]; then
-                cp "${MOUNT_POINT}/boot/refind_linux.conf" "$esp_refind"
-                info "  -> Copied to ESP: ${esp_refind}"
-            fi
-        else
-            warn "  -> Could not detect root UUID, refind_linux.conf not created"
+        local esp_refind="${MOUNT_POINT}/boot/efi/EFI/refind/refind_linux.conf"
+        if [ -d "$(dirname "$esp_refind")" ]; then
+            cp "${MOUNT_POINT}/boot/refind_linux.conf" "$esp_refind"
+            info "  -> Copied to ESP: ${esp_refind}"
         fi
+    elif [ "$REFIND_OK" = true ]; then
+        warn "  -> rEFInd installed but root UUID not found, refind_linux.conf not created"
     else
-        # rEFInd 失败 — 回退到 GRUB
-        warn "  -> rEFInd install failed, falling back to GRUB"
-        info "Installing GRUB bootloader..."
-        if arch-chroot "$MOUNT_POINT" grub-install \
-            --target=x86_64-efi \
-            --efi-directory=/boot/efi \
-            --bootloader-id=arch; then
-            info "OK: GRUB installed"
-            # 添加 quiet splash 到 GRUB 命令行, NVIDIA 时追加 modeset=1
-            GRUB_CMDLINE_EXTRA="quiet splash"
-            [ "${GPU_HAVE_NVIDIA:-false}" = true ] && GRUB_CMDLINE_EXTRA="$GRUB_CMDLINE_EXTRA nvidia_drm.modeset=1"
-            arch-chroot "$MOUNT_POINT" sed -i \
-                's/GRUB_CMDLINE_LINUX_DEFAULT="\(.*\)"/GRUB_CMDLINE_LINUX_DEFAULT="\1 '"${GRUB_CMDLINE_EXTRA}"'"/' \
-                /etc/default/grub
-            arch-chroot "$MOUNT_POINT" grub-mkconfig -o /boot/grub/grub.cfg
-            info "OK: GRUB configuration generated"
-        else
-            warn "  -> GRUB install also failed. You may need to install bootloader manually."
-        fi
+        warn "  -> rEFInd install failed, continuing with GRUB only"
+    fi
+
+    # --- 2. GRUB ---
+    info "Installing GRUB bootloader..."
+    if arch-chroot "$MOUNT_POINT" grub-install \
+        --target=x86_64-efi \
+        --efi-directory=/boot/efi \
+        --bootloader-id=arch; then
+        info "OK: GRUB installed"
+        # 添加 quiet splash 到 GRUB 命令行, NVIDIA 时追加 modeset=1
+        GRUB_CMDLINE_EXTRA="quiet splash"
+        [ "${GPU_HAVE_NVIDIA:-false}" = true ] && GRUB_CMDLINE_EXTRA="$GRUB_CMDLINE_EXTRA nvidia_drm.modeset=1"
+        arch-chroot "$MOUNT_POINT" sed -i \
+            's/GRUB_CMDLINE_LINUX_DEFAULT="\(.*\)"/GRUB_CMDLINE_LINUX_DEFAULT="\1 '"${GRUB_CMDLINE_EXTRA}"'"/' \
+            /etc/default/grub
+        arch-chroot "$MOUNT_POINT" grub-mkconfig -o /boot/grub/grub.cfg
+        info "OK: GRUB configuration generated"
+    else
+        warn "  -> GRUB install failed. You may need to install bootloader manually."
     fi
     echo ""
 
