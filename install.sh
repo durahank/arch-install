@@ -567,16 +567,8 @@ phase_1_full() {
     warn "WARNING: ALL DATA ON $TARGET_DISK WILL BE DESTROYED!"
     lsblk "$TARGET_DISK"
     echo ""
-    read -r -p "Type YES to confirm (any other input aborts): " CONFIRM
-    case "$CONFIRM" in
-        y|Y|yes|YES)
-            info "Confirmed. Proceeding..."
-            ;;
-        *)
-            info "Aborted by user."
-            exit 0
-            ;;
-    esac
+    read -r -p "Press Enter to confirm (or Ctrl+C to abort): "
+    info "Confirmed. Proceeding..."
     echo ""
 
     # 清除现有分区表和文件系统签名
@@ -614,16 +606,8 @@ phase_1_reinstall() {
     warn "All data on this partition will be LOST!"
     lsblk "$EXISTING_ARCH_ROOT"
     echo ""
-    read -r -p "Type YES to confirm (any other input aborts): " CONFIRM
-    case "$CONFIRM" in
-        y|Y|yes|YES)
-            info "Confirmed. Proceeding..."
-            ;;
-        *)
-            info "Aborted by user."
-            exit 0
-            ;;
-    esac
+    read -r -p "Press Enter to confirm (or Ctrl+C to abort): "
+    info "Confirmed. Proceeding..."
     echo ""
 
     ROOT_PART="$EXISTING_ARCH_ROOT"
@@ -1315,6 +1299,12 @@ MIRRORS
         info "OK: [archlinuxcn] already in target pacman.conf (skipped)"
     fi
 
+    # 启用并行下载, 大幅加速 pacman 软件包安装和系统更新
+    # 默认 Arch 的 ParallelDownloads=5 被注释, 此处启用并设为 10
+    info "Enabling parallel downloads (ParallelDownloads=10)..."
+    sed -i 's/^#ParallelDownloads = 5/ParallelDownloads = 10/' "${MOUNT_POINT}/etc/pacman.conf" || true
+    info "OK: ParallelDownloads = 10 enabled in target system"
+
     info "OK: All packages installed successfully!"
     echo ""
 }
@@ -1753,11 +1743,17 @@ ROCM_SCRIPT
     if [ "$REFIND_OK" = true ]; then
         # rEFInd 成功 — 创建 refind_linux.conf
         ROOT_UUID=$(awk '$2 == "/" { print $1 }' "${MOUNT_POINT}/etc/fstab" | sed 's/^UUID=//' || true)
+        # CPU 微码 initrd — 在引导早期加载, 修复 CPU 硬件安全漏洞
+        MICROCODE_INITRD=""
+        case "${CPU_VENDOR:-}" in
+            GenuineIntel) MICROCODE_INITRD="initrd=/intel-ucode.img" ;;
+            AuthenticAMD) MICROCODE_INITRD="initrd=/amd-ucode.img" ;;
+        esac
         if [ -n "$ROOT_UUID" ]; then
             cat > "${MOUNT_POINT}/boot/refind_linux.conf" <<REFIND
-"Boot with standard options"  "root=UUID=${ROOT_UUID} rw rootflags=subvol=@ quiet splash"
-"Boot to single-user mode"    "root=UUID=${ROOT_UUID} rw rootflags=subvol=@ quiet splash single"
-"Boot with minimal options"   "root=UUID=${ROOT_UUID} rw rootflags=subvol=@"
+"Boot with standard options"  "root=UUID=${ROOT_UUID} rw rootflags=subvol=@ quiet splash ${MICROCODE_INITRD}"
+"Boot to single-user mode"    "root=UUID=${ROOT_UUID} rw rootflags=subvol=@ quiet splash single ${MICROCODE_INITRD}"
+"Boot with minimal options"   "root=UUID=${ROOT_UUID} rw rootflags=subvol=@ ${MICROCODE_INITRD}"
 REFIND
             info "  -> /boot/refind_linux.conf created (root=UUID=$ROOT_UUID, subvol=@)"
 
@@ -2161,7 +2157,7 @@ ROOTRC
 user-db:user
 system-db:local
 PROFILE
-    cat > "/tmp/dconf-local-dbase" <<'DCONF'
+    cat > "/tmp/dconf-local-dbase" <<DCONF
 [org/gnome/desktop/interface]
 icon-theme='Papirus'
 locale='${SYSTEM_LOCALE}'
@@ -2302,7 +2298,6 @@ ENV
     #   libreoffice-base                 — LibreOffice 数据库 (不常用)
     #   libreoffice-draw                 — LibreOffice 绘图 (不常用)
     #   libreoffice-math                 — LibreOffice 公式 (不常用)
-    #   libreoffice-xsltfilter           — LibreOffice XSLT 转换器 (不常用)
     #   libreoffice-startcenter          — LibreOffice 启动中心 (GNOME 搜索替代)
     #
     # 调试说明: [HIDE] 日志输出如下
@@ -2426,9 +2421,9 @@ phase_5_finalise() {
     echo "================================================"
     echo ""
 
-    # 提供重启选项
-    read -r -p "Reboot now? (y/N): " REBOOT_ANSWER
-    if [ "$REBOOT_ANSWER" = "y" ] || [ "$REBOOT_ANSWER" = "Y" ]; then
+    # 提供重启选项 — 直接回车重启, 输入任意字符跳过
+    read -r -p "Press Enter to reboot (or type anything to skip): " REBOOT_ANSWER
+    if [ -z "$REBOOT_ANSWER" ]; then
         info "Rebooting..."
         reboot
     else
