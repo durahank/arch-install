@@ -955,6 +955,7 @@ phase_3_pacstrap() {
         --latest 20 \
         --protocol https \
         --sort rate \
+        --timeout 30 \
         --save /etc/pacman.d/mirrorlist; then
         info "  -> Mirrorlist updated"
     else
@@ -1198,13 +1199,14 @@ MIRRORS
     if [ -n "$NPU_INFO" ] && echo "$NPU_INFO" | grep -qiE '8086|intel'; then
         DETECTED_GPU_MODULES="$DETECTED_GPU_MODULES intel_vpu"
         info "  -> NPU: Intel (intel_vpu kernel module)"
-    fi
+        NPU_DETECTED=true
 
     # AMD NPU — 通过 PCI vid=1022 + 关键词检测
-    if [ -n "$NPU_INFO" ] && echo "$NPU_INFO" | grep -qiE '1022|amd.*npu|amd.*neural'; then
+    elif [ -n "$NPU_INFO" ] && echo "$NPU_INFO" | grep -qiE '1022|amd.*npu|amd.*neural'; then
         DETECTED_GPU_MODULES="$DETECTED_GPU_MODULES amdxdna"
         PACKAGES_HARDWARE_DETECTED="$PACKAGES_HARDWARE_DETECTED xrt-plugin-amdxdna"
         info "  -> NPU: AMD (amdxdna + xrt-plugin-amdxdna)"
+        NPU_DETECTED=true
     fi
 
     if [ -z "$NPU_INFO" ]; then
@@ -1274,7 +1276,7 @@ MIRRORS
     # 此时 archlinuxcn 仓库已在 live 环境中可用, 所以 pamac 和
     # archlinuxcn-keyring 也能被正确下载和安装
     # shellcheck disable=SC2086 # 有意用 word splitting 让 pacstrap 接收多个包名
-    pacstrap -K "$MOUNT_POINT" $ALL_PACKAGES
+    pacstrap -K --needed "$MOUNT_POINT" $ALL_PACKAGES
 
     # 将预设国内镜像源写入目标系统
     # 确保重启后系统也使用中国镜像源, 保持高速下载
@@ -1303,6 +1305,8 @@ MIRRORS
     # 默认 Arch 的 ParallelDownloads=5 被注释, 此处启用并设为 10
     info "Enabling parallel downloads (ParallelDownloads=10)..."
     sed -i 's/^#ParallelDownloads = 5/ParallelDownloads = 10/' "${MOUNT_POINT}/etc/pacman.conf" || true
+    # 启用彩色输出 (Color)
+    sed -i 's/^#Color/Color/' "${MOUNT_POINT}/etc/pacman.conf" || true
     info "OK: ParallelDownloads = 10 enabled in target system"
 
     info "OK: All packages installed successfully!"
@@ -1337,7 +1341,7 @@ phase_4_configure() {
     # genfstab 扫描当前挂载点并生成基于 UUID 的 fstab
     # 使用 UUID 而非设备名, 因为设备名可能在重启后变化
     info "Generating fstab..."
-    genfstab -U "$MOUNT_POINT" >> "${MOUNT_POINT}/etc/fstab"
+    genfstab -U "$MOUNT_POINT" > "${MOUNT_POINT}/etc/fstab"
 
     if [ ! -s "${MOUNT_POINT}/etc/fstab" ]; then
         error "fstab is empty - genfstab may have failed."
@@ -1367,8 +1371,14 @@ phase_4_configure() {
     arch-chroot "$MOUNT_POINT" sed -i 's/^#en_US.UTF-8/en_US.UTF-8/' /etc/locale.gen
     arch-chroot "$MOUNT_POINT" sed -i "s/^#${SYSTEM_LOCALE}/${SYSTEM_LOCALE}/" /etc/locale.gen
     arch-chroot "$MOUNT_POINT" locale-gen
-    echo "LANG=${SYSTEM_LOCALE}" > "${MOUNT_POINT}/etc/locale.conf"
-    echo "LC_MESSAGES=${SYSTEM_LOCALE}" >> "${MOUNT_POINT}/etc/locale.conf"
+    # 使用 localectl 配置系统 locale（兼容直接写文件方式）
+    arch-chroot "$MOUNT_POINT" localectl set-locale \
+        "LANG=${SYSTEM_LOCALE}" \
+        "LC_MESSAGES=${SYSTEM_LOCALE}" || {
+        warn "localectl failed, falling back to direct write"
+        echo "LANG=${SYSTEM_LOCALE}" > "${MOUNT_POINT}/etc/locale.conf"
+        echo "LC_MESSAGES=${SYSTEM_LOCALE}" >> "${MOUNT_POINT}/etc/locale.conf"
+    }
     # 配置 vconsole (终端键盘布局)
     echo "KEYMAP=${KEYMAP}" > "${MOUNT_POINT}/etc/vconsole.conf"
     info "OK: Locale configured (${SYSTEM_LOCALE})"
@@ -1490,7 +1500,7 @@ SSHD
     info "  -> sshd.service enabled"
 
     # ufw 放行 SSH
-    arch-chroot "$MOUNT_POINT" ufw allow 22/tcp comment 'SSH'
+    arch-chroot "$MOUNT_POINT" ufw allow "${SSH_PORT}/tcp" comment 'SSH'
     info "  -> ufw: SSH (22/tcp) allowed"
     info "OK: SSH server configured"
 
@@ -1749,11 +1759,16 @@ ROCM_SCRIPT
             GenuineIntel) MICROCODE_INITRD="initrd=/intel-ucode.img" ;;
             AuthenticAMD) MICROCODE_INITRD="initrd=/amd-ucode.img" ;;
         esac
+        # NVIDIA DRM modeset — 若检测到 NVIDIA GPU, 启用内核模式设置
+        # nvidia_drm.modeset=1 确保 NVIDIA 驱动在引导时正确初始化 KMS,
+        # 修复 Plymouth 开机动画不显示等问题。
+        NVIDIA_MODESET_PARAM=""
+        [ "${GPU_HAVE_NVIDIA:-false}" = true ] && NVIDIA_MODESET_PARAM="nvidia_drm.modeset=1"
         if [ -n "$ROOT_UUID" ]; then
             cat > "${MOUNT_POINT}/boot/refind_linux.conf" <<REFIND
-"Boot with standard options"  "root=UUID=${ROOT_UUID} rw rootflags=subvol=@ quiet splash ${MICROCODE_INITRD}"
-"Boot to single-user mode"    "root=UUID=${ROOT_UUID} rw rootflags=subvol=@ quiet splash single ${MICROCODE_INITRD}"
-"Boot with minimal options"   "root=UUID=${ROOT_UUID} rw rootflags=subvol=@ ${MICROCODE_INITRD}"
+"Boot with standard options"  "root=UUID=${ROOT_UUID} rw rootflags=subvol=@ quiet splash ${MICROCODE_INITRD} ${NVIDIA_MODESET_PARAM}"
+"Boot to single-user mode"    "root=UUID=${ROOT_UUID} rw rootflags=subvol=@ quiet splash single ${MICROCODE_INITRD} ${NVIDIA_MODESET_PARAM}"
+"Boot with minimal options"   "root=UUID=${ROOT_UUID} rw rootflags=subvol=@ ${MICROCODE_INITRD} ${NVIDIA_MODESET_PARAM}"
 REFIND
             info "  -> /boot/refind_linux.conf created (root=UUID=$ROOT_UUID, subvol=@)"
 
@@ -1774,9 +1789,11 @@ REFIND
             --efi-directory=/boot/efi \
             --bootloader-id=arch; then
             info "OK: GRUB installed"
-            # 添加 quiet splash 到 GRUB 命令行
+            # 添加 quiet splash 到 GRUB 命令行, NVIDIA 时追加 modeset=1
+            GRUB_CMDLINE_EXTRA="quiet splash"
+            [ "${GPU_HAVE_NVIDIA:-false}" = true ] && GRUB_CMDLINE_EXTRA="$GRUB_CMDLINE_EXTRA nvidia_drm.modeset=1"
             arch-chroot "$MOUNT_POINT" sed -i \
-                's/GRUB_CMDLINE_LINUX_DEFAULT="\(.*\)"/GRUB_CMDLINE_LINUX_DEFAULT="\1 quiet splash"/' \
+                's/GRUB_CMDLINE_LINUX_DEFAULT="\(.*\)"/GRUB_CMDLINE_LINUX_DEFAULT="\1 '"${GRUB_CMDLINE_EXTRA}"'"/' \
                 /etc/default/grub
             arch-chroot "$MOUNT_POINT" grub-mkconfig -o /boot/grub/grub.cfg
             info "OK: GRUB configuration generated"
@@ -2360,7 +2377,7 @@ ENV
                 echo ""
                 continue
             fi
-            echo "root:$ROOT_PASS1" | arch-chroot "$MOUNT_POINT" chpasswd && break
+            printf 'root:%s' "$ROOT_PASS1" | arch-chroot "$MOUNT_POINT" chpasswd && break
             warn "Failed to set password. Try again."
             echo ""
         done
