@@ -86,10 +86,37 @@ phase_5_finalise            # 收尾
 脚本开头的常量区域可调整关键参数：
 
 ```bash
-TARGET_DISK=""          # 目标磁盘（如 /dev/sda）
-INSTALL_DESKTOP=true    # 是否安装 GNOME 桌面
-FORMAT_ESP=true         # 全盘安装时格式化 ESP
+TARGET_DISK=""              # 目标磁盘（如 /dev/sda）
+INSTALL_DESKTOP=true        # 是否安装 GNOME 桌面
+FORMAT_ESP=true             # 全盘安装时格式化 ESP
+RESUME_FROM=""              # 从中断处恢复：设为 3 跳过 Phase 0-2，从 pacstrap 继续
 ```
+
+### 从中断处恢复
+
+安装过程中断（如网络超时、SSH 断连、误关闭终端）后，可跳过已完成的阶段直接恢复：
+
+1. 重新进入 Arch ISO 环境
+2. 挂载已有的分区到 `/mnt`
+3. 编辑 `install.sh`，将 `RESUME_FROM` 设为中断的阶段号，然后运行
+
+**示例**：日志显示中断在 Phase 3（pacstrap），则：
+
+```bash
+# 先挂载已有分区（如果 /mnt 未挂载）
+mount /dev/vda2 /mnt
+mount /dev/vda1 /mnt/boot/efi    # 如 ESP 未挂载
+# 安装后阶段的依赖工具（arch-install-scripts）
+pacman -Sy arch-install-scripts  # 确保 pacstrap 可用
+
+# 编辑脚本后运行
+RESUME_FROM=3 bash install.sh
+```
+
+### pacstrap 兼容性
+
+脚本自动检测当前 ISO 的 `pacstrap` 版本是否支持 `-K`（内核密钥环）和 `--needed` 标志，
+无需手动修改。较旧的 Arch ISO（2024 年 3 月前）不带 `-K` 支持，脚本会自动降级。
 
 ## 依赖
 

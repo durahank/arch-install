@@ -48,6 +48,11 @@ FORMAT_ESP=true   # 是否格式化 ESP (全盘=true, 共存/重装复用=false)
 INSTALL_DESKTOP=true # 是否安装桌面环境 (GNOME + THIRD_PARTY), 设为 false 仅部署基础系统
 INSTALL_ROCM=true    # 是否安装 ROCm (AMD GPU 计算平台, 添加约 1.5GB 软件包)
 
+# 阶段跳过后继续机制 — 设置已完成的 PHASE 编号，脚本跳过前面的阶段直接从中断处恢复。
+# 例子：RESUME_FROM=3   → 跳过 Phase 0/1/2，从 Phase 3 (pacstrap) 开始
+#       RESUME_FROM=""  → 从头安装（默认）
+RESUME_FROM=""
+
 # ============================================================================
 # 可定制系统参数
 # ============================================================================
@@ -157,6 +162,28 @@ try_cmd() {
         info "OK: ${desc}"
         _log "OK" "${desc} completed"
     fi
+}
+
+# 阶段跳过检查 — 如果 RESUME_FROM 已设置且大于当前阶段号，则跳过
+# 用法: if phase_should_skip 3; then return; fi
+# 放在每个 phase_X 函数的开头，用于从中断处恢复
+phase_should_skip() {
+    local current_phase="$1"
+    if [ -n "$RESUME_FROM" ] && [ "$current_phase" -lt "$RESUME_FROM" ] 2>/dev/null; then
+        info "Skipping Phase ${current_phase} (RESUME_FROM=${RESUME_FROM})"
+        return 0
+    fi
+    return 1
+}
+
+# 检测 pacstrap 是否支持 -K 标志（arch-install-scripts >= 28）
+pacstrap_supports_K() {
+    pacstrap --help 2>&1 | grep -q -- '-K'
+}
+
+# 检测 pacstrap 是否支持 --needed（arch-install-scripts >= 22）
+pacstrap_supports_needed() {
+    pacstrap --help 2>&1 | grep -q -- '--needed'
 }
 
 # ============================================================================
@@ -357,6 +384,7 @@ readonly PACKAGES_THIRD_PARTY="
 #   - 时钟同步 (避免 SSL 证书验证失败)
 
 phase_0_preflight() {
+    if phase_should_skip 0; then return; fi
     header
     phase "PHASE 0: Pre-installation Checks"
     echo ""
@@ -422,6 +450,7 @@ phase_0_preflight() {
 #   Partition 2: root (btrfs, 剩余空间)
 
 phase_1_partition() {
+    if phase_should_skip 1; then return; fi
     header
     phase "PHASE 1: Disk Partitioning"
     echo ""
@@ -790,6 +819,7 @@ phase_1_create_root() {
 #   - Timeshift 在 btrfs 模式下同时备份 @ 和 @home 子卷
 
 phase_2_format_and_mount() {
+    if phase_should_skip 2; then return; fi
     header
     phase "PHASE 2: Formatting and Mounting (btrfs + subvolumes)"
     echo ""
@@ -917,6 +947,7 @@ phase_2_format_and_mount() {
 #         最后将 archlinuxcn 配置写入目标系统的 pacman.conf。
 
 phase_3_pacstrap() {
+    if phase_should_skip 3; then return; fi
     header
     if [ "$INSTALL_DESKTOP" = true ]; then
         phase "PHASE 3: Installing Base System and GNOME Desktop"
@@ -955,7 +986,6 @@ phase_3_pacstrap() {
         --latest 20 \
         --protocol https \
         --sort rate \
-        --timeout 30 \
         --save /etc/pacman.d/mirrorlist; then
         info "  -> Mirrorlist updated"
     else
@@ -1276,7 +1306,20 @@ MIRRORS
     # 此时 archlinuxcn 仓库已在 live 环境中可用, 所以 pamac 和
     # archlinuxcn-keyring 也能被正确下载和安装
     # shellcheck disable=SC2086 # 有意用 word splitting 让 pacstrap 接收多个包名
-    pacstrap -K --needed "$MOUNT_POINT" $ALL_PACKAGES
+    PACSTRAP_OPTS=""
+    if pacstrap_supports_K; then
+        PACSTRAP_OPTS="$PACSTRAP_OPTS -K"
+        info "  -> pacstrap supports -K (kernel keyring)"
+    else
+        info "  -> pacstrap does not support -K (older arch-install-scripts)"
+    fi
+    if pacstrap_supports_needed; then
+        PACSTRAP_OPTS="$PACSTRAP_OPTS --needed"
+    fi
+    # shellcheck disable=SC2086
+    info "Running: pacstrap $PACSTRAP_OPTS $MOUNT_POINT ..."
+    # 用 run_cmd 包裹 pacstrap 以确保 stderr 也进入日志
+    run_cmd pacstrap $PACSTRAP_OPTS "$MOUNT_POINT" $ALL_PACKAGES
 
     # 将预设国内镜像源写入目标系统
     # 确保重启后系统也使用中国镜像源, 保持高速下载
@@ -1330,6 +1373,7 @@ MIRRORS
 #   (用户/密码/语言/键盘等: 有桌面时由 gnome-initial-setup 配置, 无桌面时需手动设置 passwd)
 
 phase_4_configure() {
+    if phase_should_skip 4; then return; fi
     header
     phase "PHASE 4: System Configuration (in chroot)"
     echo ""
@@ -1731,13 +1775,8 @@ ROCM_SCRIPT
     # ------------------------------------------------------------------
     # 引导管理器安装 (同时安装 rEFInd + GRUB, 双引导管理器并行)
     # ------------------------------------------------------------------
-    # 两个引导管理器共用变量 (提前提取, 免去重复代码)
+    # 共用变量提前提取
     ROOT_UUID=$(awk '$2 == "/" { print $1 }' "${MOUNT_POINT}/etc/fstab" | sed 's/^UUID=//' || true)
-    MICROCODE_INITRD=""
-    case "${CPU_VENDOR:-}" in
-        GenuineIntel) MICROCODE_INITRD="initrd=/intel-ucode.img" ;;
-        AuthenticAMD) MICROCODE_INITRD="initrd=/amd-ucode.img" ;;
-    esac
     NVIDIA_MODESET_PARAM=""
     [ "${GPU_HAVE_NVIDIA:-false}" = true ] && NVIDIA_MODESET_PARAM="nvidia_drm.modeset=1"
 
@@ -1762,11 +1801,13 @@ ROCM_SCRIPT
     if [ "$REFIND_OK" = true ] && [ -n "$ROOT_UUID" ]; then
         # rEFInd 成功 — 创建 refind_linux.conf
         cat > "${MOUNT_POINT}/boot/refind_linux.conf" <<REFIND
-"Boot with standard options"  "root=UUID=${ROOT_UUID} rw rootflags=subvol=@ quiet splash ${MICROCODE_INITRD} ${NVIDIA_MODESET_PARAM}"
-"Boot to single-user mode"    "root=UUID=${ROOT_UUID} rw rootflags=subvol=@ quiet splash single ${MICROCODE_INITRD} ${NVIDIA_MODESET_PARAM}"
-"Boot with minimal options"   "root=UUID=${ROOT_UUID} rw rootflags=subvol=@ ${MICROCODE_INITRD} ${NVIDIA_MODESET_PARAM}"
+"Boot with standard options"  "root=UUID=${ROOT_UUID} rw rootflags=subvol=@ quiet splash ${NVIDIA_MODESET_PARAM}"
+"Boot to single-user mode"    "root=UUID=${ROOT_UUID} rw rootflags=subvol=@ quiet splash single ${NVIDIA_MODESET_PARAM}"
+"Boot with minimal options"   "root=UUID=${ROOT_UUID} rw rootflags=subvol=@ ${NVIDIA_MODESET_PARAM}"
 REFIND
         info "  -> /boot/refind_linux.conf created (root=UUID=$ROOT_UUID, subvol=@)"
+        # 注意: rEFInd 自动检测并加载微码 (intel-ucode.img / amd-ucode.img), 无需在 kernel
+        # cmdline 中加 initrd= 参数。手动加入会导致内核找不到文件且替代 initramfs。
 
         local esp_refind="${MOUNT_POINT}/boot/efi/EFI/refind/refind_linux.conf"
         if [ -d "$(dirname "$esp_refind")" ]; then
@@ -2390,6 +2431,7 @@ ENV
 # 卸载分区、打印安装摘要, 并提供重启选项
 
 phase_5_finalise() {
+    if phase_should_skip 5; then return; fi
     header
     phase "PHASE 5: Finalisation"
     echo ""
@@ -2461,6 +2503,9 @@ main() {
     echo "================================================"
     echo ""
     info "Installation log: ${LOG_FILE}"
+    if [ -n "$RESUME_FROM" ]; then
+        info "RESUME MODE: Starting from Phase ${RESUME_FROM} (skipping phases 0-$((RESUME_FROM - 1)))"
+    fi
     echo ""
 
     # 设置清理 trap: 脚本中断或退出时自动卸载已挂载的分区
