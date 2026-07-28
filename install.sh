@@ -1415,14 +1415,9 @@ phase_4_configure() {
     arch-chroot "$MOUNT_POINT" sed -i 's/^#en_US.UTF-8/en_US.UTF-8/' /etc/locale.gen
     arch-chroot "$MOUNT_POINT" sed -i "s/^#${SYSTEM_LOCALE}/${SYSTEM_LOCALE}/" /etc/locale.gen
     arch-chroot "$MOUNT_POINT" locale-gen
-    # 使用 localectl 配置系统 locale（兼容直接写文件方式）
-    arch-chroot "$MOUNT_POINT" localectl set-locale \
-        "LANG=${SYSTEM_LOCALE}" \
-        "LC_MESSAGES=${SYSTEM_LOCALE}" || {
-        warn "localectl failed, falling back to direct write"
-        echo "LANG=${SYSTEM_LOCALE}" > "${MOUNT_POINT}/etc/locale.conf"
-        echo "LC_MESSAGES=${SYSTEM_LOCALE}" >> "${MOUNT_POINT}/etc/locale.conf"
-    }
+    # 配置语言环境 (直接写 /etc/locale.conf, 避免 localectl 在 chroot
+    # 中行为不稳定导致 gnome-initial-setup 无法识别语言)
+    echo "LANG=${SYSTEM_LOCALE}" > "${MOUNT_POINT}/etc/locale.conf"
     # 配置 vconsole (终端键盘布局)
     echo "KEYMAP=${KEYMAP}" > "${MOUNT_POINT}/etc/vconsole.conf"
     info "OK: Locale configured (${SYSTEM_LOCALE})"
