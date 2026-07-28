@@ -1821,11 +1821,12 @@ REFIND
     fi
 
     # --- 2. GRUB ---
-    info "Installing GRUB bootloader..."
+    info "Installing GRUB bootloader (no-nvram — rEFInd remains default)..."
     if arch-chroot "$MOUNT_POINT" grub-install \
         --target=x86_64-efi \
         --efi-directory=/boot/efi \
-        --bootloader-id=arch; then
+        --bootloader-id=arch \
+        --no-nvram; then
         info "OK: GRUB installed"
         # 添加 quiet splash 到 GRUB 命令行, NVIDIA 时追加 modeset=1
         GRUB_CMDLINE_EXTRA="quiet splash"
