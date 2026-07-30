@@ -43,7 +43,7 @@ TARGET_DISK=""
 EFI_PART=""
 ROOT_PART=""
 PART_PREFIX=""
-MOUNT_POINT="/mnt"
+readonly MOUNT_POINT="/mnt"
 FORMAT_ESP=true   # 是否格式化 ESP (全盘=true, 共存/重装复用=false)
 INSTALL_DESKTOP=true # 是否安装桌面环境 (GNOME + THIRD_PARTY), 设为 false 仅部署基础系统
 INSTALL_ROCM=true    # 是否安装 ROCm (AMD GPU 计算平台, 添加约 1.5GB 软件包)
@@ -179,11 +179,6 @@ phase_should_skip() {
 # 检测 pacstrap 是否支持 -K 标志（arch-install-scripts >= 28）
 pacstrap_supports_K() {
     pacstrap --help 2>&1 | grep -q -- '-K'
-}
-
-# 检测 pacstrap 是否支持 --needed（arch-install-scripts >= 22）
-pacstrap_supports_needed() {
-    pacstrap --help 2>&1 | grep -q -- '--needed'
 }
 
 # ============================================================================
@@ -463,8 +458,8 @@ phase_1_partition() {
         echo "Available block devices:"
         echo ""
         # 列出磁盘并编号
-        DISK_LIST=()
-        DISK_NAMES=()
+        local DISK_LIST=()
+        local DISK_NAMES=()
         while IFS= read -r line; do
             name=$(echo "$line" | awk '{print $1}')
             DISK_NAMES+=("$name")
@@ -514,13 +509,13 @@ phase_1_partition() {
     # 如果存在卷标为 "Arch" 的 btrfs 分区, 表示之前通过本脚本安装过。
     # 此时提供 "重装" 选项: 格式化该分区重新安装, 保留 ESP 不变。
 
-    EXISTING_ARCH_ROOT=""
+    local EXISTING_ARCH_ROOT=""
     EXISTING_ARCH_ROOT=$(blkid -L Arch 2>/dev/null || lsblk -o LABEL,PATH -nl 2>/dev/null | \
         awk '/^Arch/ {print $2; exit}')
 
     if [ -n "$EXISTING_ARCH_ROOT" ] && [ -b "$EXISTING_ARCH_ROOT" ]; then
         # 找到同一磁盘上的 ESP
-        EXISTING_ARCH_DISK=""
+        local EXISTING_ARCH_DISK=""
         # shellcheck disable=SC2001 # sed 比 bash 参数替换更清晰易读
         if echo "$EXISTING_ARCH_ROOT" | grep -qP '/dev/nvme'; then
             EXISTING_ARCH_DISK=$(echo "$EXISTING_ARCH_ROOT" | sed 's/p[0-9]*$//')
@@ -530,7 +525,7 @@ phase_1_partition() {
             EXISTING_ARCH_DISK=$(echo "$EXISTING_ARCH_ROOT" | sed 's/[0-9]*$//')
         fi
 
-        EXISTING_ARCH_ESP=$(parted "$EXISTING_ARCH_DISK" -- print 2>/dev/null | \
+        local EXISTING_ARCH_ESP=$(parted "$EXISTING_ARCH_DISK" -- print 2>/dev/null | \
             awk '/fat32/ && /esp/ {print $1}' | head -1)
         if [ -n "$EXISTING_ARCH_ESP" ]; then
             if echo "$EXISTING_ARCH_DISK" | grep -qP '/dev/nvme|/dev/mmcblk'; then
@@ -675,6 +670,8 @@ phase_1_reinstall() {
 # ======================================================================
 
 phase_1_coexist() {
+    local EXISTING_ESP SPACE_CHOICE FREE_START FREE_END
+    local ESP_SIZE ESP_MIB ESP_END
     echo ""
     info "Analyzing existing partition layout..."
 
@@ -923,7 +920,7 @@ phase_2_format_and_mount() {
     # 显示 btrfs 子卷树状结构
     try_cmd "Listing btrfs subvolumes" btrfs subvolume list "$MOUNT_POINT"
     echo ""
-} 
+}
 
 # ============================================================================
 # PHASE 3 - 安装基础系统和 GNOME 桌面
@@ -1306,20 +1303,29 @@ MIRRORS
     # 此时 archlinuxcn 仓库已在 live 环境中可用, 所以 pamac 和
     # archlinuxcn-keyring 也能被正确下载和安装
     # shellcheck disable=SC2086 # 有意用 word splitting 让 pacstrap 接收多个包名
-    PACSTRAP_OPTS=""
+    PACSTRAP_OPTS=()
     if pacstrap_supports_K; then
-        PACSTRAP_OPTS="$PACSTRAP_OPTS -K"
+        PACSTRAP_OPTS+=(-K)
         info "  -> pacstrap supports -K (kernel keyring)"
     else
         info "  -> pacstrap does not support -K (older arch-install-scripts)"
     fi
-    if pacstrap_supports_needed; then
-        PACSTRAP_OPTS="$PACSTRAP_OPTS --needed"
+    info "Running: pacstrap ${PACSTRAP_OPTS[*]} $MOUNT_POINT ..."
+    # 用 script -qfc 创建伪终端 (PTY)，让 pacman 认为 stdout 是真实终端，
+    # 从而正常显示下载进度条和速率。输出同时通过 tee 写入日志。
+    echo ""
+    _log "CMD" "pacstrap ${PACSTRAP_OPTS[*]} $MOUNT_POINT ..."
+    echo "" >> "$LOG_FILE"
+    set +e
+    script -qfc "pacstrap ${PACSTRAP_OPTS[*]} $MOUNT_POINT $ALL_PACKAGES" /dev/null 2>&1 | tee -a "$LOG_FILE"
+    PACSTRAP_EXIT="${PIPESTATUS[0]}"
+    set -e
+    if [ "$PACSTRAP_EXIT" -ne 0 ]; then
+        echo "--- LOG FILE: ${LOG_FILE} ---" >&2
+        error "pacstrap failed (exit code ${PACSTRAP_EXIT}). See log: ${LOG_FILE}"
+        exit "$PACSTRAP_EXIT"
     fi
-    # shellcheck disable=SC2086
-    info "Running: pacstrap $PACSTRAP_OPTS $MOUNT_POINT ..."
-    # 用 run_cmd 包裹 pacstrap 以确保 stderr 也进入日志
-    run_cmd pacstrap $PACSTRAP_OPTS "$MOUNT_POINT" $ALL_PACKAGES
+    _log "OK" "pacstrap completed"
 
     # 将预设国内镜像源写入目标系统
     # 确保重启后系统也使用中国镜像源, 保持高速下载
