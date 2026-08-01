@@ -8,7 +8,7 @@
 #
 # 镜像来源: https://archlinux.org/mirrors/status/json/  (HTTPS, 评分最优)
 # 如需添加国家: 在 PRESET_MIRRORS 中新增一个键即可, 键名与
-# config.conf 的 PRESET_MIRROR_COUNTRY 取值对应。
+# config.conf 的 MIRROR_COUNTRY 取值对应。
 #
 # 注意: 值中的 \$repo / \$arch 保留字面量 (source 时反斜杠转义),
 #       写入 mirrorlist 后由 pacman 在运行时展开, 不要去掉反斜杠。

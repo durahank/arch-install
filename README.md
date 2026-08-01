@@ -98,8 +98,7 @@ TIMEZONE="Asia/Shanghai"    # 系统时区
 SYSTEM_LOCALE="zh_CN.UTF-8" # 系统语言
 HOSTNAME="archlinux"        # 主机名
 SSH_PORT=22                 # SSH 监听端口
-REFLECTOR_COUNTRY="China"   # 镜像源筛选国家（reflector 联网排序）
-PRESET_MIRROR_COUNTRY="China"  # 预设镜像国家（reflector 失败时的 fallback）
+MIRROR_COUNTRY="China"      # 镜像源国家（reflector 联网排序 + 预设 fallback）
                            # 可用: China/Japan/United States/Germany/Singapore/
                            #       United Kingdom/Australia/South Korea/Taiwan/
                            #       Hong Kong/India/France（见 lib/mirrors.sh）

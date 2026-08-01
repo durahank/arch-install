@@ -82,17 +82,17 @@ phase_3_pacstrap() {
     info "Updating mirrorlist with reflector for faster downloads..."
     info "  -> Ranking mirrors by download speed..."
     if reflector \
-        --country "${REFLECTOR_COUNTRY}" \
+        --country "${MIRROR_COUNTRY}" \
         --latest 20 \
         --protocol https \
         --sort rate \
         --save /etc/pacman.d/mirrorlist; then
         info "  -> Mirrorlist updated"
     else
-        warn "Reflector failed — using preset mirrors (${PRESET_MIRROR_COUNTRY})"
+        warn "Reflector failed — using preset mirrors (${MIRROR_COUNTRY})"
         # 写入预设镜像 (lib/mirrors.sh 中按国家配置, 含官方 fallback)
-        if preset_mirrorlist "${PRESET_MIRROR_COUNTRY}" > /etc/pacman.d/mirrorlist; then
-            info "  -> Preset mirrors applied (${PRESET_MIRROR_COUNTRY})"
+        if preset_mirrorlist "${MIRROR_COUNTRY}" > /etc/pacman.d/mirrorlist; then
+            info "  -> Preset mirrors applied (${MIRROR_COUNTRY})"
         else
             info "  -> Official fallback mirrors applied"
         fi
@@ -416,7 +416,7 @@ phase_3_pacstrap() {
 
     # 将预设镜像源写入目标系统
     # 确保重启后系统也使用选定国家的镜像源, 保持高速下载
-    info "Writing mirrors (${PRESET_MIRROR_COUNTRY}) to target system's mirrorlist..."
+    info "Writing mirrors (${MIRROR_COUNTRY}) to target system's mirrorlist..."
     mkdir -p "${MOUNT_POINT}/etc/pacman.d"
     cp /etc/pacman.d/mirrorlist "${MOUNT_POINT}/etc/pacman.d/mirrorlist"
     info "OK: Mirrors persisted in target system"
