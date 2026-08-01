@@ -68,7 +68,8 @@ _log_init() {
         echo "============================================"
         echo " install.sh 安装日志"
         echo " 开始时间: $(date '+%Y-%m-%d %H:%M:%S')"
-        echo " 主机名:   $(hostname)"
+        # 主机名来自 config.conf 的 HOSTNAME 配置 (source 后即为 bash 变量)
+        echo " 主机名:   ${HOSTNAME:-unknown}"
         echo " 内核:     $(uname -r)"
         echo "============================================"
         echo ""
