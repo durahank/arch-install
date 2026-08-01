@@ -42,6 +42,30 @@ phase_4_configure() {
     info "OK: fstab generated at /etc/fstab"
 
     # ------------------------------------------------------------------
+    # CA 证书库
+    # ------------------------------------------------------------------
+    # pacstrap 阶段 libalpm 的 post-install hooks 不会在目标系统中运行
+    # (pacman --root 模式), 40-update-ca-trust.hook 从未触发, 导致
+    # /etc/ssl/certs/ca-certificates.crt 指向的 tls-ca-bundle.pem 缺失。
+    # curl / flatpak / pamac 等会报 [77] Problem with the SSL CA cert。
+    # 在 chroot 内显式运行 update-ca-trust 生成证书库。
+    info "Rebuilding CA certificate store..."
+    if [ -x "${MOUNT_POINT}/usr/bin/update-ca-trust" ]; then
+        arch-chroot "$MOUNT_POINT" update-ca-trust
+        info "OK: CA certificates rebuilt (/etc/ssl/certs/ca-certificates.crt)"
+    else
+        warn "update-ca-trust not found — reinstalling ca-certificates-utils"
+        arch-chroot "$MOUNT_POINT" pacman -S --needed --noconfirm ca-certificates ca-certificates-utils
+        arch-chroot "$MOUNT_POINT" update-ca-trust
+    fi
+    # 验证证书库是否真正生成
+    if [ -s "${MOUNT_POINT}/etc/ca-certificates/extracted/tls-ca-bundle.pem" ]; then
+        info "OK: CA bundle verified ($(wc -c < "${MOUNT_POINT}/etc/ca-certificates/extracted/tls-ca-bundle.pem") bytes)"
+    else
+        warn "CA bundle still missing — flatpak/curl may fail with [77] SSL CA cert error"
+    fi
+
+    # ------------------------------------------------------------------
     # 时区配置
     # ------------------------------------------------------------------
     # 设置时区
