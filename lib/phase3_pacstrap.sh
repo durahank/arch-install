@@ -123,6 +123,19 @@ phase_3_pacstrap() {
     info "OK: archlinuxcn-keyring installed on live environment"
 
     # ------------------------------------------------------------------
+    # 加速 pacstrap 下载 (live 环境并行下载)
+    # ------------------------------------------------------------------
+    # pacstrap 使用 live 环境的 /etc/pacman.conf 作为下载配置
+    # (pacstrap 内部复制该文件到临时文件并 --config 使用, 未传 -C 即默认)。
+    # archiso 默认自带 ParallelDownloads = 5 (未注释), 即 pacstrap 阶段
+    # 已经并行下载; 此处把并发数调高到 10, 让一次性安装几百个包时更快。
+    # 注意: 只改 live 环境, 不影响目标系统 (目标系统的 pacman.conf
+    # 来自 pacman 包模板, 由下方 "启用并行下载" 块单独处理)。
+    info "Raising live-environment parallel downloads (ParallelDownloads=10)..."
+    sed -i 's/^#\?ParallelDownloads = [0-9]*/ParallelDownloads = 10/' /etc/pacman.conf || true
+    info "OK: live ParallelDownloads = 10 (pacstrap download acceleration)"
+
+    # ------------------------------------------------------------------
     # 硬件检测 — 识别 GPU / CPU / 蓝牙等, 自动添加对应驱动包
     # ------------------------------------------------------------------
     # 在 pacstrap 前检测当前硬件, 动态构建驱动包列表。
@@ -455,9 +468,10 @@ phase_3_pacstrap() {
         "OK: [archlinuxcn] already in target pacman.conf (skipped)"
 
     # 启用并行下载, 大幅加速 pacman 软件包安装和系统更新
-    # 默认 Arch 的 ParallelDownloads=5 被注释, 此处启用并设为 10
+    # 注意: 新版 pacman 模板默认 ParallelDownloads = 5 是未注释的,
+    # 旧版是注释形式, 用 ^#\? 同时匹配两种形式, 否则 sed 永不命中
     info "Enabling parallel downloads (ParallelDownloads=10)..."
-    sed -i 's/^#ParallelDownloads = 5/ParallelDownloads = 10/' "${MOUNT_POINT}/etc/pacman.conf" || true
+    sed -i 's/^#\?ParallelDownloads = [0-9]*/ParallelDownloads = 10/' "${MOUNT_POINT}/etc/pacman.conf" || true
     # 启用彩色输出 (Color)
     sed -i 's/^#Color/Color/' "${MOUNT_POINT}/etc/pacman.conf" || true
     info "OK: ParallelDownloads = 10 enabled in target system"
