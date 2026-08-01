@@ -25,8 +25,32 @@
 
 set -euo pipefail
 
-# 脚本所在目录 (支持从任意路径调用)
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# ----------------------------------------------------------------------------
+# 定位脚本所在目录
+# ----------------------------------------------------------------------------
+# 支持两种运行方式:
+#   1) 本地克隆/完整下载:  bash install.sh
+#   2) 单文件管道:         curl -fsSL <raw-url> | bash   (stdin 模式无 BASH_SOURCE)
+# 单文件模式下同目录缺少 config.conf / lib/, 自动从 GitHub 拉取完整仓库。
+
+if [ -n "${BASH_SOURCE[0]:-}" ]; then
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+else
+    SCRIPT_DIR="$(pwd)"
+fi
+
+if [ ! -f "${SCRIPT_DIR}/config.conf" ] || [ ! -d "${SCRIPT_DIR}/lib" ]; then
+    echo "[INFO] 未检测到完整模块 (config.conf / lib/), 正在从 GitHub 拉取最新版本..."
+    FETCH_DIR="$(mktemp -d)"
+    if ! curl -fsSL "https://github.com/durahank/arch-install/archive/refs/heads/main.tar.gz" \
+        | tar -xz -C "${FETCH_DIR}"; then
+        rm -rf "${FETCH_DIR}"
+        echo "[ERROR] 从 GitHub 拉取脚本失败, 请检查网络或改用完整克隆方式。" >&2
+        exit 1
+    fi
+    SCRIPT_DIR="${FETCH_DIR}/arch-install-main"
+    echo "[INFO] 已拉取到临时目录: ${SCRIPT_DIR}"
+fi
 
 # 加载用户配置文件
 # shellcheck source=config.conf
@@ -78,7 +102,8 @@ main() {
 
     # 设置清理 trap: 脚本中断或退出时自动卸载已挂载的分区
     # 防止用户在分区/挂载阶段 Ctrl+C 导致磁盘状态不一致
-    trap 'echo ""; warn "Interrupted or exited — unmounting ${MOUNT_POINT}..."; umount -R "$MOUNT_POINT" 2>/dev/null || true; info "Cleanup done"' EXIT INT TERM
+    # 同时清理单文件模式下自举下载的临时目录 (如有)
+    trap 'echo ""; warn "Interrupted or exited — unmounting ${MOUNT_POINT}..."; umount -R "$MOUNT_POINT" 2>/dev/null || true; if [ -n "${FETCH_DIR:-}" ]; then rm -rf "$FETCH_DIR"; fi; info "Cleanup done"' EXIT INT TERM
 
     phase_0_preflight
     phase_1_partition
