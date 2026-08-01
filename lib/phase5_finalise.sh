@@ -56,7 +56,7 @@ phase_5_finalise() {
     echo ""
 
     # 提供重启选项 — 直接回车重启, 输入任意字符跳过
-    read -r -p "Press Enter to reboot (or type anything to skip): " REBOOT_ANSWER
+    _prompt "Press Enter to reboot (or type anything to skip): " REBOOT_ANSWER
     if [ -z "$REBOOT_ANSWER" ]; then
         info "Rebooting..."
         reboot

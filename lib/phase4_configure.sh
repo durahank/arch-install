@@ -1043,10 +1043,8 @@ ENV
         info "No desktop environment — setting root password is required for login."
         echo ""
         while true; do
-            read -r -s -p "Enter root password: " ROOT_PASS1
-            echo
-            read -r -s -p "Confirm root password: " ROOT_PASS2
-            echo
+            _prompt_secret "Enter root password: " ROOT_PASS1
+            _prompt_secret "Confirm root password: " ROOT_PASS2
             if [ -z "$ROOT_PASS1" ]; then
                 warn "Password cannot be empty. Try again."
                 echo ""

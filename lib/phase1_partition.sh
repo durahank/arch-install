@@ -100,7 +100,7 @@ phase_1_partition() {
                 echo "  $((i+1))) ${DISK_LIST[$i]}"
             done
             echo ""
-            read -r -p "Enter disk number (1-${#DISK_LIST[@]}): " DISK_NUM
+            _prompt "Enter disk number (1-${#DISK_LIST[@]}): " DISK_NUM
             # 验证输入为正整数
             if [ -z "$DISK_NUM" ] || ! [[ "$DISK_NUM" =~ ^[0-9]+$ ]] || \
                [ "$DISK_NUM" -lt 1 ] || [ "$DISK_NUM" -gt "${#DISK_LIST[@]}" ]; then
@@ -172,7 +172,7 @@ phase_1_partition() {
         echo "  3) Reinstall      — Format existing Arch partition ($EXISTING_ARCH_ROOT), reuse ESP"
     fi
     echo ""
-    read -r -p "Enter choice (1/2${EXISTING_ARCH_ROOT:+/3}): " INSTALL_MODE
+    _prompt "Enter choice (1/2${EXISTING_ARCH_ROOT:+/3}): " INSTALL_MODE
 
     case "$INSTALL_MODE" in
         3)
@@ -203,7 +203,7 @@ phase_1_full() {
     warn "WARNING: ALL DATA ON $TARGET_DISK WILL BE DESTROYED!"
     lsblk "$TARGET_DISK"
     echo ""
-    read -r -p "Press Enter to confirm (or Ctrl+C to abort): "
+    _prompt "Press Enter to confirm (or Ctrl+C to abort): " CONFIRM_ENTER
     info "Confirmed. Proceeding..."
     echo ""
 
@@ -242,7 +242,7 @@ phase_1_reinstall() {
     warn "All data on this partition will be LOST!"
     lsblk "$EXISTING_ARCH_ROOT"
     echo ""
-    read -r -p "Press Enter to confirm (or Ctrl+C to abort): "
+    _prompt "Press Enter to confirm (or Ctrl+C to abort): " CONFIRM_ENTER
     info "Confirmed. Proceeding..."
     echo ""
 
@@ -308,18 +308,18 @@ phase_1_coexist() {
     echo "  1) Use all available free space (auto)"
     echo "  2) Manual: specify start sector for new root partition"
     echo ""
-    read -r -p "Enter choice (1 or 2): " SPACE_CHOICE
+    _prompt "Enter choice (1 or 2): " SPACE_CHOICE
 
     case "$SPACE_CHOICE" in
         2)
-            read -r -p "Enter START sector in MiB (e.g., 1024): " FREE_START
+            _prompt "Enter START sector in MiB (e.g., 1024): " FREE_START
             # 校验: 必须为正整数
             if [ -z "$FREE_START" ] || ! [[ "$FREE_START" =~ ^[0-9]+$ ]]; then
                 error "Invalid START sector. Must be a positive integer (MiB)."
                 exit 1
             fi
             FREE_START="${FREE_START}MiB"
-            read -r -p "Enter END sector in MiB (e.g., 100% or 51200): " FREE_END
+            _prompt "Enter END sector in MiB (e.g., 100% or 51200): " FREE_END
             # 校验: 允许 "100%" 或正整数
             if [ "$FREE_END" != "100%" ] && \
                { [ -z "$FREE_END" ] || ! [[ "$FREE_END" =~ ^[0-9]+$ ]]; }; then
@@ -335,7 +335,7 @@ phase_1_coexist() {
 
             if [ -z "$FREE_START" ]; then
                 warn "Could not auto-detect free space. Falling back to manual input."
-                read -r -p "Enter START sector in MiB (e.g., after last partition): " FREE_START
+                _prompt "Enter START sector in MiB (e.g., after last partition): " FREE_START
                 if [ -z "$FREE_START" ] || ! [[ "$FREE_START" =~ ^[0-9]+$ ]]; then
                     error "Invalid START sector. Must be a positive integer (MiB)."
                     exit 1

@@ -159,3 +159,67 @@ phase_should_skip() {
 pacstrap_supports_K() {
     pacstrap --help 2>&1 | grep -q -- '-K'
 }
+
+# 交互式输入 — 兼容 curl | bash 管道模式
+# ---------------------------------------------------------------
+# curl | bash 单命令方式下, 脚本 stdin 是 curl 的输出管道而不是终端:
+#   1) 管道在 curl 结束后已 EOF, read 会立即返回非零
+#   2) set -e 会让脚本静默退出 (表现为 "Interrupted or exited")
+# 因此交互式 read 统一改用本函数:
+#   - stdin 是终端        -> 从 stdin 读取 (本地运行, 原行为不变)
+#   - stdin 非终端        -> 尝试从 /dev/tty 读取 (curl|bash 场景)
+#   - 两者都不可用        -> 明确报错退出, 而不是静默失败
+# 用法: _prompt "提示文字" 变量名
+#   例: _prompt "Enter choice (1/2): " INSTALL_MODE
+_prompt() {
+    local msg="$1"
+    local var_name="$2"
+    local input=""
+
+    if [ -t 0 ]; then
+        # 正常终端运行: 从 stdin 读取
+        read -r -p "$msg " "$var_name"
+        return 0
+    fi
+
+    # stdin 非终端 (curl|bash 管道模式): 尝试从控制终端读取
+    printf "%s " "$msg" >&2
+    if read -r input < /dev/tty 2>/dev/null; then
+        printf -v "$var_name" "%s" "$input"
+        return 0
+    fi
+
+    # 既无终端 stdin 也无控制终端: 无法交互
+    error "No interactive input available (stdin is not a TTY and /dev/tty is unusable)."
+    error "This installer requires interactive input. Please run it from a terminal:"
+    error "  bash install.sh"
+    exit 1
+}
+
+# 交互式静默输入 (密码) — 同 _prompt, 但无回显
+_prompt_secret() {
+    local msg="$1"
+    local var_name="$2"
+    local input=""
+
+    if [ -t 0 ]; then
+        # 正常终端运行: 从 stdin 读取 (无回显)
+        read -r -s -p "$msg " "$var_name"
+        echo ""
+        return 0
+    fi
+
+    # stdin 非终端 (curl|bash 管道模式): 尝试从控制终端读取
+    printf "%s " "$msg" >&2
+    if read -r -s input < /dev/tty 2>/dev/null; then
+        echo "" >&2
+        printf -v "$var_name" "%s" "$input"
+        return 0
+    fi
+
+    # 既无终端 stdin 也无控制终端: 无法交互
+    error "No interactive input available (stdin is not a TTY and /dev/tty is unusable)."
+    error "This installer requires interactive input. Please run it from a terminal:"
+    error "  bash install.sh"
+    exit 1
+}
