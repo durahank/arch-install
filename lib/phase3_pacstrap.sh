@@ -378,6 +378,27 @@ phase_3_pacstrap() {
     info "Installing system packages..."
     echo ""
 
+    # ------------------------------------------------------------------
+    # 预置 CA 证书库 (修复 pacstrap 期间 flatpak 报 [77] SSL CA cert 错误)
+    # ------------------------------------------------------------------
+    # pacstrap (pacman --root) 安装时不运行 libalpm hooks, 因此
+    # 40-update-ca-trust.hook 不会执行, 目标系统的 tls-ca-bundle.pem 不会生成。
+    # 但 libpamac-aur 的 post_install scriptlet 在 pacstrap 阶段 (chroot 内)
+    # 会执行 `flatpak remote-add --if-not-exists flathub ...` (HTTPS),
+    # 此时 /etc/ssl/certs/ca-certificates.crt 符号链接指向的文件不存在,
+    # flatpak 报 [77] Problem with the SSL CA cert。
+    # 解决: 在 pacstrap 前把 live 环境的 CA bundle 复制到目标系统,
+    # 使符号链接立即指向有效文件。tls-ca-bundle.pem 不在任何包文件列表中,
+    # 预置不会与 pacman 安装冲突; phase4 还会用 update-ca-trust 重建权威版本。
+    if [ -s /etc/ca-certificates/extracted/tls-ca-bundle.pem ]; then
+        mkdir -p "${MOUNT_POINT}/etc/ca-certificates/extracted"
+        cp /etc/ca-certificates/extracted/tls-ca-bundle.pem \
+            "${MOUNT_POINT}/etc/ca-certificates/extracted/tls-ca-bundle.pem"
+        info "OK: CA bundle pre-seeded (live environment)"
+    else
+        warn "CA bundle not found in live env — flatpak may fail during pacstrap"
+    fi
+
     # 将所有包变量合并, 去除空行和首尾空格
     ALL_PACKAGES=$(echo "
         $PACKAGES_BASE
