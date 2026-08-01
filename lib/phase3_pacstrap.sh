@@ -25,6 +25,27 @@
 # PHASE 3 - 安装基础系统和 GNOME 桌面
 # ============================================================================
 
+# ----------------------------------------------------------------------------
+# 辅助函数
+# ----------------------------------------------------------------------------
+
+# 向指定 pacman.conf 追加 [archlinuxcn] 仓库配置 (已存在则跳过)
+# 用法: _add_archlinuxcn_repo <pacman.conf路径> <新增提示> <已存在提示>
+_add_archlinuxcn_repo() {
+    local conf_path="$1" ok_msg="$2" skip_msg="$3"
+    if ! grep -q '^\[archlinuxcn\]' "$conf_path" 2>/dev/null; then
+        {
+            echo ""
+            echo "[archlinuxcn]"
+            # shellcheck disable=SC2016 # $arch 保持字面量, 由 pacman 展开
+            echo "Server = ${ARCHLINUXCN_MIRROR}"
+        } >> "$conf_path"
+        info "$ok_msg"
+    else
+        info "$skip_msg"
+    fi
+}
+
 phase_3_pacstrap() {
     if phase_should_skip 3; then return; fi
     header
@@ -98,17 +119,9 @@ MIRRORS
 
     info "Configuring [archlinuxcn] repository for live environment..."
     # 检查是否已配置, 避免重装场景下重复追加
-    if ! grep -q '^\[archlinuxcn\]' /etc/pacman.conf 2>/dev/null; then
-        {
-            echo ""
-            echo "[archlinuxcn]"
-            # shellcheck disable=SC2016
-            echo "Server = ${ARCHLINUXCN_MIRROR}"
-        } >> /etc/pacman.conf
-        info "OK: [archlinuxcn] added to live pacman.conf"
-    else
-        info "OK: [archlinuxcn] already in live pacman.conf (skipped)"
-    fi
+    _add_archlinuxcn_repo /etc/pacman.conf \
+        "OK: [archlinuxcn] added to live pacman.conf" \
+        "OK: [archlinuxcn] already in live pacman.conf (skipped)"
 
     # 刷新软件包数据库并安装 archlinuxcn-keyring
     # 该 keyring 包含了 archlinuxcn 仓库的 GPG 签名密钥
@@ -420,17 +433,9 @@ MIRRORS
     # 这样重启后 pamac 能正常从该仓库获取更新
     # 检查是否已存在, 避免重装场景重复追加
     info "Writing [archlinuxcn] to target system's pacman.conf..."
-    if ! grep -q '^\[archlinuxcn\]' "${MOUNT_POINT}/etc/pacman.conf" 2>/dev/null; then
-        {
-            echo ""
-            echo "[archlinuxcn]"
-            # shellcheck disable=SC2016
-            echo "Server = ${ARCHLINUXCN_MIRROR}"
-        } >> "${MOUNT_POINT}/etc/pacman.conf"
-        info "OK: [archlinuxcn] persisted in target system"
-    else
-        info "OK: [archlinuxcn] already in target pacman.conf (skipped)"
-    fi
+    _add_archlinuxcn_repo "${MOUNT_POINT}/etc/pacman.conf" \
+        "OK: [archlinuxcn] persisted in target system" \
+        "OK: [archlinuxcn] already in target pacman.conf (skipped)"
 
     # 启用并行下载, 大幅加速 pacman 软件包安装和系统更新
     # 默认 Arch 的 ParallelDownloads=5 被注释, 此处启用并设为 10

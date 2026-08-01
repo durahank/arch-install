@@ -902,7 +902,6 @@ DCONF
     try_cmd "Linking fontconfig no-autohint" ln -sf /usr/share/fonts/conf.avail/10-no-autohint.conf "${MOUNT_POINT}/etc/fonts/conf.d/10-no-autohint.conf"
 
     # 配置中文字体优先级 (Noto CJK 优先于其他字体)
-    mkdir -p "${MOUNT_POINT}/etc/fonts/conf.d"
     cat > "${MOUNT_POINT}/etc/fonts/conf.d/30-chinese-fonts.conf" <<'FONTCONF'
 <?xml version="1.0"?>
 <!DOCTYPE fontconfig SYSTEM "urn:fonts:config:fontconfig:config.dtd">

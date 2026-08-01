@@ -32,6 +32,43 @@
 # PHASE 1 - 磁盘选择与分区
 # ============================================================================
 
+# ----------------------------------------------------------------------------
+# 辅助函数 (磁盘命名规则与 ESP 检测)
+# ----------------------------------------------------------------------------
+
+# 判断磁盘设备是否使用 "p" 作为分区号分隔符 (NVMe / MMC / VirtIO)
+# 用法: _disk_uses_p_prefix <disk>    返回 0=需要 p 前缀, 1=不需要
+_disk_uses_p_prefix() {
+    echo "$1" | grep -qP '/dev/nvme|/dev/mmcblk'
+}
+
+# 从磁盘设备 + 分区号构造完整分区路径 (自动处理 p 前缀)
+# 用法: _part_path <disk> <part_num>
+_part_path() {
+    if _disk_uses_p_prefix "$1"; then
+        echo "${1}p${2}"
+    else
+        echo "${1}${2}"
+    fi
+}
+
+# 从分区路径反推磁盘设备 (去掉分区号)
+# 用法: _disk_from_part <part_path>
+_disk_from_part() {
+    if _disk_uses_p_prefix "$1"; then
+        echo "$1" | sed 's/p[0-9]*$//'
+    else
+        echo "$1" | sed 's/[0-9]*$//'
+    fi
+}
+
+# 在指定磁盘上查找 ESP 分区号 (fat32 + esp 标志), 找不到则输出空
+# 用法: _find_esp_num <disk>
+_find_esp_num() {
+    parted "$1" -- print 2>/dev/null | \
+        awk '/fat32/ && /esp/ {print $1; exit}' | sed 's/^[[:space:]]*//'
+}
+
 phase_1_partition() {
     if phase_should_skip 1; then return; fi
     header
@@ -83,9 +120,7 @@ phase_1_partition() {
     echo ""
 
     # 确定分区命名规则 (NVMe / MMC / VirtIO / SATA)
-    if echo "$TARGET_DISK" | grep -qP '/dev/nvme'; then
-        PART_PREFIX="${TARGET_DISK}p"
-    elif echo "$TARGET_DISK" | grep -qP '/dev/mmcblk'; then
+    if _disk_uses_p_prefix "$TARGET_DISK"; then
         PART_PREFIX="${TARGET_DISK}p"
     else
         PART_PREFIX="$TARGET_DISK"
@@ -104,23 +139,12 @@ phase_1_partition() {
     if [ -n "$EXISTING_ARCH_ROOT" ] && [ -b "$EXISTING_ARCH_ROOT" ]; then
         # 找到同一磁盘上的 ESP
         local EXISTING_ARCH_DISK=""
-        # shellcheck disable=SC2001 # sed 比 bash 参数替换更清晰易读
-        if echo "$EXISTING_ARCH_ROOT" | grep -qP '/dev/nvme'; then
-            EXISTING_ARCH_DISK=$(echo "$EXISTING_ARCH_ROOT" | sed 's/p[0-9]*$//')
-        elif echo "$EXISTING_ARCH_ROOT" | grep -qP '/dev/mmcblk'; then
-            EXISTING_ARCH_DISK=$(echo "$EXISTING_ARCH_ROOT" | sed 's/p[0-9]*$//')
-        else
-            EXISTING_ARCH_DISK=$(echo "$EXISTING_ARCH_ROOT" | sed 's/[0-9]*$//')
-        fi
+        EXISTING_ARCH_DISK=$(_disk_from_part "$EXISTING_ARCH_ROOT")
 
-        local EXISTING_ARCH_ESP=$(parted "$EXISTING_ARCH_DISK" -- print 2>/dev/null | \
-            awk '/fat32/ && /esp/ {print $1}' | head -1)
+        local EXISTING_ARCH_ESP
+        EXISTING_ARCH_ESP=$(_find_esp_num "$EXISTING_ARCH_DISK")
         if [ -n "$EXISTING_ARCH_ESP" ]; then
-            if echo "$EXISTING_ARCH_DISK" | grep -qP '/dev/nvme|/dev/mmcblk'; then
-                EXISTING_ARCH_ESP="${EXISTING_ARCH_DISK}p${EXISTING_ARCH_ESP}"
-            else
-                EXISTING_ARCH_ESP="${EXISTING_ARCH_DISK}${EXISTING_ARCH_ESP}"
-            fi
+            EXISTING_ARCH_ESP=$(_part_path "$EXISTING_ARCH_DISK" "$EXISTING_ARCH_ESP")
         fi
 
         echo ""
@@ -232,14 +256,9 @@ phase_1_reinstall() {
         # 如果没有找到 ESP, 尝试在同一磁盘上查找
         info "Searching for ESP on the same disk..."
         local esp_num
-        esp_num=$(parted "$EXISTING_ARCH_DISK" -- print 2>/dev/null | \
-            awk '/fat32/ && /esp/ {print $1; exit}')
+        esp_num=$(_find_esp_num "$EXISTING_ARCH_DISK")
         if [ -n "$esp_num" ]; then
-            if echo "$EXISTING_ARCH_DISK" | grep -qP '/dev/nvme|/dev/mmcblk'; then
-                EFI_PART="${EXISTING_ARCH_DISK}p${esp_num}"
-            else
-                EFI_PART="${EXISTING_ARCH_DISK}${esp_num}"
-            fi
+            EFI_PART=$(_part_path "$EXISTING_ARCH_DISK" "$esp_num")
             info "Found ESP: $EFI_PART"
             FORMAT_ESP=false
         else
@@ -268,8 +287,7 @@ phase_1_coexist() {
     echo ""
 
     # 检测是否存在 ESP
-    EXISTING_ESP=$(parted "$TARGET_DISK" -- print 2>/dev/null | \
-        awk '/fat32/ && /esp/ {print $1; exit}' | sed 's/^[[:space:]]*//')
+    EXISTING_ESP=$(_find_esp_num "$TARGET_DISK")
     if [ -n "$EXISTING_ESP" ]; then
         EFI_PART="${PART_PREFIX}${EXISTING_ESP}"
         FORMAT_ESP=false
