@@ -31,6 +31,7 @@ arch-install/
 └── lib/
     ├── common.sh            # 公共函数 — 颜色/日志/辅助函数/状态变量
     ├── packages.sh          # 软件包清单 — 按类别组织的软件包列表
+    ├── mirrors.sh           # 预设镜像源 — 各国 fallback 镜像（reflector 失败时使用）
     ├── phase0_preflight.sh  # 阶段 0 — 安装前检查（root/UEFI/网络/时钟）
     ├── phase1_partition.sh  # 阶段 1 — 磁盘选择与分区（全盘/共存/重装）
     ├── phase2_format_mount.sh # 阶段 2 — 格式化和挂载（btrfs + 子卷）
@@ -97,6 +98,11 @@ TIMEZONE="Asia/Shanghai"    # 系统时区
 SYSTEM_LOCALE="zh_CN.UTF-8" # 系统语言
 HOSTNAME="archlinux"        # 主机名
 SSH_PORT=22                 # SSH 监听端口
+REFLECTOR_COUNTRY="China"   # 镜像源筛选国家（reflector 联网排序）
+PRESET_MIRROR_COUNTRY="China"  # 预设镜像国家（reflector 失败时的 fallback）
+                           # 可用: China/Japan/United States/Germany/Singapore/
+                           #       United Kingdom/Australia/South Korea/Taiwan/
+                           #       Hong Kong/India/France（见 lib/mirrors.sh）
 # ... 其余参数见文件内注释
 ```
 

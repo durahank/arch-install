@@ -89,21 +89,13 @@ phase_3_pacstrap() {
         --save /etc/pacman.d/mirrorlist; then
         info "  -> Mirrorlist updated"
     else
-        warn "Reflector failed — using preset mirrors"
-        cat > /etc/pacman.d/mirrorlist <<'MIRRORS'
-## China - Preset mirrors (sorted by speed and reliability)
-Server = https://mirrors.tuna.tsinghua.edu.cn/archlinux/$repo/os/$arch
-Server = https://mirrors.aliyun.com/archlinux/$repo/os/$arch
-Server = https://mirrors.ustc.edu.cn/archlinux/$repo/os/$arch
-Server = https://mirrors.huaweicloud.com/archlinux/$repo/os/$arch
-Server = https://mirror.xtom.com.hk/archlinux/$repo/os/$arch
-Server = https://mirrors.163.com/archlinux/$repo/os/$arch
-Server = https://mirror.fsmirrorey.cn/archlinux/$repo/os/$arch
-## Fallback - Official mirrors
-Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch
-Server = https://mirror.rackspace.com/archlinux/$repo/os/$arch
-MIRRORS
-        info "  -> Preset mirrors applied"
+        warn "Reflector failed — using preset mirrors (${PRESET_MIRROR_COUNTRY})"
+        # 写入预设镜像 (lib/mirrors.sh 中按国家配置, 含官方 fallback)
+        if preset_mirrorlist "${PRESET_MIRROR_COUNTRY}" > /etc/pacman.d/mirrorlist; then
+            info "  -> Preset mirrors applied (${PRESET_MIRROR_COUNTRY})"
+        else
+            info "  -> Official fallback mirrors applied"
+        fi
     fi
     echo ""
 
@@ -422,12 +414,12 @@ MIRRORS
     fi
     _log "OK" "pacstrap completed"
 
-    # 将预设国内镜像源写入目标系统
-    # 确保重启后系统也使用中国镜像源, 保持高速下载
-    info "Writing Chinese mirrors to target system's mirrorlist..."
+    # 将预设镜像源写入目标系统
+    # 确保重启后系统也使用选定国家的镜像源, 保持高速下载
+    info "Writing mirrors (${PRESET_MIRROR_COUNTRY}) to target system's mirrorlist..."
     mkdir -p "${MOUNT_POINT}/etc/pacman.d"
     cp /etc/pacman.d/mirrorlist "${MOUNT_POINT}/etc/pacman.d/mirrorlist"
-    info "OK: Chinese mirrors persisted in target system"
+    info "OK: Mirrors persisted in target system"
 
     # 将 archlinuxcn 仓库配置写入目标系统
     # 这样重启后 pamac 能正常从该仓库获取更新

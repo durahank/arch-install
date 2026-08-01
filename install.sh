@@ -16,6 +16,7 @@
 #   lib/
 #     common.sh             公共函数 — 颜色/日志/辅助函数/状态变量
 #     packages.sh           软件包清单 — 按类别组织的软件包列表
+#     mirrors.sh            预设镜像源 — 各国 fallback 镜像 (reflector 失败时使用)
 #     phase0_preflight.sh   阶段 0 — 安装前检查 (root/UEFI/网络/时钟)
 #     phase1_partition.sh   阶段 1 — 磁盘选择与分区 (全盘/共存/重装)
 #     phase2_format_mount.sh 阶段 2 — 格式化和挂载 (btrfs + 子卷)
@@ -63,6 +64,10 @@ source "${SCRIPT_DIR}/lib/common.sh"
 # 加载软件包清单
 # shellcheck source=lib/packages.sh
 source "${SCRIPT_DIR}/lib/packages.sh"
+
+# 加载预设镜像源 (各国 fallback 镜像)
+# shellcheck source=lib/mirrors.sh
+source "${SCRIPT_DIR}/lib/mirrors.sh"
 
 # 加载各安装阶段模块
 # shellcheck source=lib/phase0_preflight.sh
