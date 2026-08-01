@@ -48,16 +48,23 @@ arch-install/
 ### 2. 获取脚本
 
 ```bash
-# 方式一：直接下载
-curl -O https://raw.githubusercontent.com/durahank/arch-install/main/install.sh
+# 方式一：单命令直接运行（自动拉取完整模块，等价于下方克隆后执行）
+curl -fsSL https://raw.githubusercontent.com/durahank/arch-install/main/install.sh | bash
 
-# 方式二：克隆仓库（推荐，包含 config.conf 和 lib/ 模块）
+# 方式二：下载后本地运行
+curl -fsSL -o install.sh https://raw.githubusercontent.com/durahank/arch-install/main/install.sh
+bash install.sh
+
+# 方式三：克隆仓库（推荐，可离线查看/修改配置）
 git clone https://github.com/durahank/arch-install.git
 cd arch-install
+bash install.sh
 ```
 
-> ⚠️ **注意**：脚本已被拆分，必须克隆整个仓库（或下载全部文件）后运行，
-> 单独下载 `install.sh` 无法工作。
+> **关于单命令方式**：`curl | bash` 只传输 `install.sh` 本体，脚本检测到
+> 同目录缺少 `config.conf` 和 `lib/` 模块时，会自动从 GitHub 拉取最新
+> 完整仓库到临时目录后继续执行，结束后自动清理临时目录。
+> 修改配置请使用克隆方式（方式三）。
 
 ### 3. （可选）修改配置
 
