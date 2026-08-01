@@ -399,12 +399,16 @@ phase_3_pacstrap() {
     fi
     info "Running: pacstrap ${PACSTRAP_OPTS[*]} $MOUNT_POINT ..."
     # 用 script -qfc 创建伪终端 (PTY)，让 pacman 认为 stdout 是真实终端，
-    # 从而正常显示下载进度条和速率。输出同时通过 tee 写入日志。
+    # 从而正常显示下载进度条和速率。终端显示完整原始输出 (进度条照常)，
+    # 写入日志前用 sed 过滤进度条回退符 (\r) 与 ANSI 颜色码，保持日志干净。
     echo ""
     _log "CMD" "pacstrap ${PACSTRAP_OPTS[*]} $MOUNT_POINT ..."
     echo "" >> "$LOG_FILE"
     set +e
-    script -qfc "pacstrap ${PACSTRAP_OPTS[*]} $MOUNT_POINT $ALL_PACKAGES" /dev/null 2>&1 | tee -a "$LOG_FILE"
+    # -e 让 script 返回子进程 (pacstrap) 的真实退出码, 否则默认恒为 0,
+    # 会导致 pacstrap 失败时脚本误判为成功而继续执行
+    script -qfe -c "pacstrap ${PACSTRAP_OPTS[*]} $MOUNT_POINT $ALL_PACKAGES" /dev/null 2>&1 \
+        | tee >(sed -r 's/\r$//; s/\x1b\[[0-9;]*m//g; s/.*\r//' >> "$LOG_FILE")
     PACSTRAP_EXIT="${PIPESTATUS[0]}"
     set -e
     if [ "$PACSTRAP_EXIT" -ne 0 ]; then
